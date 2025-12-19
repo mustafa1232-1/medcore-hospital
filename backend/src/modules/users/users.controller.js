@@ -1,5 +1,6 @@
 // src/modules/users/users.controller.js
 const usersService = require('./users.service');
+const passwordService = require('../auth/password.service'); // NEW
 
 async function listUsers(req, res, next) {
   try {
@@ -52,8 +53,27 @@ async function setActive(req, res, next) {
   }
 }
 
+// NEW
+async function resetPassword(req, res, next) {
+  try {
+    const tenantId = req.user?.tenantId;
+    const targetUserId = req.params.id;
+
+    await passwordService.adminResetPassword({
+      tenantId,
+      targetUserId,
+      newPassword: req.body.newPassword,
+    });
+
+    return res.json({ ok: true });
+  } catch (err) {
+    return next(err);
+  }
+}
+
 module.exports = {
   listUsers,
   createUser,
   setActive,
+  resetPassword,
 };

@@ -193,9 +193,67 @@ async function logout(req, res, next) {
   }
 }
 
+// ✅ NEW: Change own password (requires requireAuth middleware in route)
+async function changePassword(req, res, next) {
+  try {
+    const tenantId = req.user?.tenantId;
+    const userId = req.user?.sub;
+
+    if (!tenantId || !userId) {
+      return res.status(401).json({ message: 'Unauthorized: invalid payload' });
+    }
+
+    const { currentPassword, newPassword } = req.body;
+
+    // 1) read current hash
+    const userQ = await pool.query(
+      `
+      SELECT password_hash AS "passwordHash", is_active AS "isActive"
+      FROM users
+      WHERE id = $1 AND tenant_id = $2
+      LIMIT 1
+      `,
+      [userId, tenantId]
+    );
+
+    if (userQ.rowCount === 0) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const u = userQ.rows[0];
+    if (!u.isActive) {
+      return res.status(403).json({ message: 'User is inactive' });
+    }
+
+    // 2) verify current password
+    const ok = await bcrypt.compare(currentPassword, u.passwordHash);
+    if (!ok) {
+      return res.status(400).json({ message: 'Invalid current password' });
+    }
+
+    // 3) write new hash
+    const newHash = await bcrypt.hash(newPassword, 10);
+
+    await pool.query(
+      `
+      UPDATE users
+      SET password_hash = $1
+      WHERE id = $2 AND tenant_id = $3
+      `,
+      [newHash, userId, tenantId]
+    );
+
+    // (اختياري لاحقاً): revoke sessions for this user
+    return res.json({ ok: true });
+  } catch (err) {
+    return next(err);
+  }
+}
+
 module.exports = {
   registerTenant,
   login,
   refresh,
   logout,
+  changePassword, // ✅ export
 };
