@@ -4,7 +4,7 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
-
+const { requireAuth } = require('./middlewares/auth');
 const authRoutes = require('./modules/auth/auth.routes');
 
 const app = express();
@@ -24,7 +24,11 @@ app.use((err, req, res, next) => {
   const status = err.status || 500;
   res.status(status).json({
     message: err.message || 'Server error',
+    
   });
+  app.get('/api/me', requireAuth, (req, res) => {
+  res.json({ ok: true, user: req.user });
+});
 });
 
 const port = process.env.PORT || 8080;
