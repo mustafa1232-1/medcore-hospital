@@ -9,36 +9,30 @@ function mustEnv(name) {
 const JWT_ACCESS_SECRET = mustEnv('JWT_ACCESS_SECRET');
 
 function requireAuth(req, res, next) {
-  const header = req.headers.authorization || '';
-  const [type, token] = header.split(' ');
-
-  if (type !== 'Bearer' || !token) {
-    return res.status(401).json({ message: 'Missing Authorization Bearer token' });
-  }
-
   try {
+    const header = req.headers.authorization || '';
+    const token = header.startsWith('Bearer ') ? header.slice(7) : null;
+
+    if (!token) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+
     const payload = jwt.verify(token, JWT_ACCESS_SECRET);
-    req.user = {
-      userId: payload.sub,
-      tenantId: payload.tenantId,
-      roles: payload.roles || [],
-    };
-    next();
-  } catch {
-    return res.status(401).json({ message: 'Invalid or expired token' });
+
+    // ضع أي شكل تريده للمستخدم. المهم req.user موجود
+    req.user = payload;
+
+    return next();
+  } catch (err) {
+    return res.status(401).json({ message: 'Unauthorized: invalid token' });
   }
 }
-
-function requireRole(...roles) {
-  return (req, res, next) => {
-    const userRoles = req.user?.roles || [];
-    const ok = roles.some(r => userRoles.includes(r));
-    if (!ok) return res.status(403).json({ message: 'Forbidden' });
-    next();
-  };
+// src/middlewares/auth.js
+function requireAuth(req, res, next) {
+  // ... تحقق JWT
+  // req.user = decoded
+  return next();
 }
 
-module.exports = {
-  requireAuth,
-  requireRole,
-};
+module.exports = { requireAuth };
+
