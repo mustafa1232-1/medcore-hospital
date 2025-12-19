@@ -19,11 +19,11 @@ async function registerTenant(req, res, next) {
 
     await client.query('BEGIN');
 
-    // 1) create tenant
+    // 1) Create tenant
     const tenantQ = await client.query(
       `
-      INSERT INTO tenants (name, type, phone, email)
-      VALUES ($1, $2, $3, $4)
+      INSERT INTO tenants (id, name, type, phone, email, created_at)
+      VALUES (gen_random_uuid(), $1, $2, $3, $4, now())
       RETURNING id, name, type, phone, email, created_at
       `,
       [name, type, phone || null, email || null]
@@ -31,13 +31,13 @@ async function registerTenant(req, res, next) {
 
     const tenant = tenantQ.rows[0];
 
-    // 2) create admin user
-    const password_hash = await bcrypt.hash(adminPassword, 10);
+    // 2) Create admin user
+    const passwordHash = await bcrypt.hash(adminPassword, 10);
 
     const userQ = await client.query(
       `
-      INSERT INTO users (tenant_id, full_name, email, phone, password_hash)
-      VALUES ($1, $2, $3, $4, $5)
+      INSERT INTO users (id, tenant_id, full_name, email, phone, password_hash, is_active, created_at)
+      VALUES (uuid_generate_v4(), $1, $2, $3, $4, $5, true, now())
       RETURNING 
         id,
         tenant_id AS "tenantId",
@@ -45,53 +45,37 @@ async function registerTenant(req, res, next) {
         email,
         phone
       `,
-      [tenant.id, adminFullName, adminEmail || null, adminPhone || null, password_hash]
+      [tenant.id, adminFullName, adminEmail || null, adminPhone || null, passwordHash]
     );
 
     const admin = userQ.rows[0];
 
-    // 3) ensure ADMIN role exists for this tenant
+    // 3) Ensure ADMIN role
     const roleQ = await client.query(
       `
-      INSERT INTO roles (tenant_id, name)
-      VALUES ($1, 'ADMIN')
+      INSERT INTO roles (tenant_id, name, created_at)
+      VALUES ($1, 'ADMIN', now())
       ON CONFLICT (tenant_id, name) DO UPDATE SET name = EXCLUDED.name
       RETURNING id, name
       `,
       [tenant.id]
     );
 
-    const role = roleQ.rows[0];
+    const roleId = roleQ.rows[0].id;
 
-    // 4) attach role to user
+    // 4) Link user_roles
     await client.query(
       `
       INSERT INTO user_roles (user_id, role_id)
       VALUES ($1, $2)
       ON CONFLICT DO NOTHING
       `,
-      [admin.id, role.id]
+      [admin.id, roleId]
     );
 
     await client.query('COMMIT');
 
-    return res.status(201).json({
-      tenant: {
-        id: tenant.id,
-        name: tenant.name,
-        type: tenant.type,
-        phone: tenant.phone,
-        email: tenant.email,
-        created_at: tenant.created_at,
-      },
-      admin: {
-        id: admin.id,
-        tenantId: admin.tenantId,
-        fullName: admin.fullName,
-        email: admin.email,
-        phone: admin.phone,
-      },
-    });
+    return res.status(201).json({ tenant, admin });
   } catch (err) {
     try { await client.query('ROLLBACK'); } catch {}
     return next(err);
@@ -104,34 +88,27 @@ async function login(req, res, next) {
   try {
     const { tenantId, email, phone, password } = req.body;
 
-    // 1) find user within tenant by email or phone
-    const params = [tenantId];
-    let where = `tenant_id = $1`;
-
-    if (email) {
-      params.push(email);
-      where += ` AND email = $2`;
-    } else {
-      params.push(phone);
-      where += ` AND phone = $2`;
-    }
-
     const userQ = await pool.query(
       `
-      SELECT
+      SELECT 
         id,
         tenant_id AS "tenantId",
         full_name AS "fullName",
         email,
         phone,
-        password_hash,
+        password_hash AS "passwordHash",
         is_active AS "isActive",
         created_at AS "createdAt"
       FROM users
-      WHERE ${where}
+      WHERE tenant_id = $1
+        AND (
+          ($2::text IS NOT NULL AND email = $2)
+          OR
+          ($3::text IS NOT NULL AND phone = $3)
+        )
       LIMIT 1
       `,
-      params
+      [tenantId, email || null, phone || null]
     );
 
     if (userQ.rowCount === 0) {
@@ -144,12 +121,11 @@ async function login(req, res, next) {
       return res.status(403).json({ message: 'User is inactive' });
     }
 
-    const ok = await bcrypt.compare(password, u.password_hash);
+    const ok = await bcrypt.compare(password, u.passwordHash);
     if (!ok) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
-    // 2) roles
     const rolesQ = await pool.query(
       `
       SELECT r.name
@@ -161,21 +137,23 @@ async function login(req, res, next) {
       [u.id]
     );
 
-    const roles = rolesQ.rows.map((x) => x.name);
+    const roles = rolesQ.rows.map(x => x.name);
 
-    // 3) issue tokens and persist refresh session
     const tokens = await authService.issueTokensForUser(
       { userId: u.id, tenantId: u.tenantId, roles },
       { userAgent: req.headers['user-agent'], ip: req.ip }
     );
 
-    // remove password hash from response
-    delete u.password_hash;
-
     return res.json({
       ...tokens,
       user: {
-        ...u,
+        id: u.id,
+        tenantId: u.tenantId,
+        fullName: u.fullName,
+        email: u.email,
+        phone: u.phone,
+        isActive: u.isActive,
+        createdAt: u.createdAt,
         roles,
       },
     });

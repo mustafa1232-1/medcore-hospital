@@ -9,6 +9,9 @@ const morgan = require('morgan');
 const authRoutes = require('./modules/auth/auth.routes');
 const meRoutes = require('./routes/me.routes');
 
+// NEW
+const usersRoutes = require('./modules/users/users.routes');
+
 const app = express();
 
 app.use(helmet());
@@ -20,6 +23,9 @@ app.get('/health', (req, res) => res.json({ ok: true }));
 
 app.use('/api/auth', authRoutes);
 app.use('/api', meRoutes);
+
+// NEW: /api/users
+app.use('/api/users', usersRoutes);
 
 // Error handler (آخر شيء)
 app.use((err, req, res, next) => {
