@@ -1,5 +1,5 @@
+// src/modules/auth/auth.service.js
 const jwt = require('jsonwebtoken');
-const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const pool = require('../../db/pool');
 
@@ -11,286 +11,148 @@ function mustEnv(name) {
 
 const JWT_ACCESS_SECRET = mustEnv('JWT_ACCESS_SECRET');
 const JWT_REFRESH_SECRET = mustEnv('JWT_REFRESH_SECRET');
+const JWT_ACCESS_EXPIRES_IN = process.env.JWT_ACCESS_EXPIRES_IN || '15m';
+const JWT_REFRESH_EXPIRES_IN = process.env.JWT_REFRESH_EXPIRES_IN || '30d';
 
-const ACCESS_TTL_MIN = Number(process.env.JWT_ACCESS_TTL_MIN || 15);
-const REFRESH_TTL_DAYS = Number(process.env.JWT_REFRESH_TTL_DAYS || 30);
-
-function signAccessToken({ userId, tenantId, roles }) {
-  return jwt.sign(
-    { sub: userId, tenantId, roles },
-    JWT_ACCESS_SECRET,
-    { expiresIn: `${ACCESS_TTL_MIN}m` }
-  );
+function signAccessToken(payload) {
+  return jwt.sign(payload, JWT_ACCESS_SECRET, { expiresIn: JWT_ACCESS_EXPIRES_IN });
 }
 
-function signRefreshToken({ userId, sessionId }) {
-  // sessionId داخل التوكن لربط refresh بصف auth_sessions
-  return jwt.sign(
-    { sub: userId, sid: sessionId },
-    JWT_REFRESH_SECRET,
-    { expiresIn: `${REFRESH_TTL_DAYS}d` }
-  );
+function signRefreshToken(payload) {
+  return jwt.sign(payload, JWT_REFRESH_SECRET, { expiresIn: JWT_REFRESH_EXPIRES_IN });
 }
 
-function hashToken(token) {
-  // hash ثابت وسريع (لا نحتاج bcrypt هنا)
-  return crypto.createHash('sha256').update(token).digest('hex');
-}
+async function issueTokensForUser({ userId, tenantId, roles }, meta = {}) {
+  const payload = {
+    sub: userId,
+    tenantId,
+    roles,
+  };
 
-function addDaysUTC(days) {
-  const d = new Date();
-  d.setUTCDate(d.getUTCDate() + days);
-  return d;
-}
+  const accessToken = signAccessToken(payload);
+  const refreshToken = signRefreshToken(payload);
 
-async function login({ tenantId, email, phone, password, userAgent, ip }) {
-  if (!tenantId) throw new Error('tenantId is required');
+  const refreshHash = await bcrypt.hash(refreshToken, 10);
 
-  const client = await pool.connect();
-  try {
-    const q = `
-      select id, tenant_id, full_name, email, phone, password_hash, is_active
-      from users
-      where tenant_id = $1
-        and (
-          ($2::text is not null and email = $2)
-          or ($3::text is not null and phone = $3)
-        )
-      limit 1
-    `;
-    const r = await client.query(q, [tenantId, email || null, phone || null]);
-    if (r.rowCount === 0) {
-      const e = new Error('Invalid credentials');
-      e.status = 401;
-      throw e;
-    }
-
-    const user = r.rows[0];
-    if (!user.is_active) {
-      const e = new Error('User disabled');
-      e.status = 403;
-      throw e;
-    }
-
-    const ok = await bcrypt.compare(password, user.password_hash);
-    if (!ok) {
-      const e = new Error('Invalid credentials');
-      e.status = 401;
-      throw e;
-    }
-
-    // roles
-    const rolesR = await client.query(
-      `
-      select r.name
-      from user_roles ur
-      join roles r on r.id = ur.role_id
-      where ur.user_id = $1
-      `,
-      [user.id]
-    );
-    const roles = rolesR.rows.map(x => x.name);
-
-    // create session row
-    const sessionId = crypto.randomUUID();
-    const refreshExpiresAt = addDaysUTC(REFRESH_TTL_DAYS);
-
-    const refreshToken = signRefreshToken({ userId: user.id, sessionId });
-    const refreshHash = hashToken(refreshToken);
-
-    await client.query(
-      `
-      insert into auth_sessions (id, user_id, refresh_hash, user_agent, ip, expires_at)
-      values ($1, $2, $3, $4, $5, $6)
-      `,
-      [sessionId, user.id, refreshHash, userAgent || null, ip || null, refreshExpiresAt]
-    );
-
-    const accessToken = signAccessToken({
-      userId: user.id,
-      tenantId: user.tenant_id,
-      roles,
-    });
-
-    return {
-      accessToken,
-      refreshToken,
-      user: {
-        id: user.id,
-        tenantId: user.tenant_id,
-        fullName: user.full_name,
-        email: user.email,
-        phone: user.phone,
-        roles,
-      },
-    };
-  } finally {
-    client.release();
-  }
-}
-
-async function refresh({ refreshToken, userAgent, ip }) {
-  if (!refreshToken) {
-    const e = new Error('refreshToken is required');
-    e.status = 400;
-    throw e;
-  }
-
-  let payload;
-  try {
-    payload = jwt.verify(refreshToken, JWT_REFRESH_SECRET);
-  } catch {
-    const e = new Error('Invalid refresh token');
-    e.status = 401;
-    throw e;
-  }
-
-  const userId = payload.sub;
-  const sessionId = payload.sid;
-
-  const client = await pool.connect();
-  try {
-    // session must exist, not revoked, not expired, and hash must match
-    const tokenHash = hashToken(refreshToken);
-
-    const s = await client.query(
-      `
-      select id, user_id, revoked_at, expires_at
-      from auth_sessions
-      where id = $1 and user_id = $2
-      limit 1
-      `,
-      [sessionId, userId]
-    );
-
-    if (s.rowCount === 0) {
-      const e = new Error('Refresh session not found');
-      e.status = 401;
-      throw e;
-    }
-
-    const session = s.rows[0];
-    if (session.revoked_at) {
-      const e = new Error('Refresh session revoked');
-      e.status = 401;
-      throw e;
-    }
-    if (new Date(session.expires_at).getTime() <= Date.now()) {
-      const e = new Error('Refresh session expired');
-      e.status = 401;
-      throw e;
-    }
-
-    const hashCheck = await client.query(
-      `select 1 from auth_sessions where id=$1 and refresh_hash=$2 and revoked_at is null`,
-      [sessionId, tokenHash]
-    );
-    if (hashCheck.rowCount === 0) {
-      // token mismatch => possible reuse attack: revoke session
-      await client.query(
-        `update auth_sessions set revoked_at = now() where id=$1 and revoked_at is null`,
-        [sessionId]
-      );
-      const e = new Error('Invalid refresh token');
-      e.status = 401;
-      throw e;
-    }
-
-    // load user + tenant + roles
-    const u = await client.query(
-      `select id, tenant_id, full_name, email, phone, is_active from users where id=$1 limit 1`,
-      [userId]
-    );
-    if (u.rowCount === 0 || !u.rows[0].is_active) {
-      const e = new Error('User invalid');
-      e.status = 401;
-      throw e;
-    }
-    const user = u.rows[0];
-
-    const rolesR = await client.query(
-      `
-      select r.name
-      from user_roles ur
-      join roles r on r.id = ur.role_id
-      where ur.user_id = $1
-      `,
-      [user.id]
-    );
-    const roles = rolesR.rows.map(x => x.name);
-
-    // ROTATION: revoke old session & create new
-    await client.query(
-      `update auth_sessions set revoked_at = now() where id=$1 and revoked_at is null`,
-      [sessionId]
-    );
-
-    const newSessionId = crypto.randomUUID();
-    const refreshExpiresAt = addDaysUTC(REFRESH_TTL_DAYS);
-
-    const newRefreshToken = signRefreshToken({ userId: user.id, sessionId: newSessionId });
-    const newRefreshHash = hashToken(newRefreshToken);
-
-    await client.query(
-      `
-      insert into auth_sessions (id, user_id, refresh_hash, user_agent, ip, expires_at)
-      values ($1, $2, $3, $4, $5, $6)
-      `,
-      [newSessionId, user.id, newRefreshHash, userAgent || null, ip || null, refreshExpiresAt]
-    );
-
-    const newAccessToken = signAccessToken({
-      userId: user.id,
-      tenantId: user.tenant_id,
-      roles,
-    });
-
-    return {
-      accessToken: newAccessToken,
-      refreshToken: newRefreshToken,
-      user: {
-        id: user.id,
-        tenantId: user.tenant_id,
-        fullName: user.full_name,
-        email: user.email,
-        phone: user.phone,
-        roles,
-      },
-    };
-  } finally {
-    client.release();
-  }
-}
-
-async function logout({ refreshToken }) {
-  if (!refreshToken) return { ok: true };
-
-  let payload;
-  try {
-    payload = jwt.verify(refreshToken, JWT_REFRESH_SECRET);
-  } catch {
-    return { ok: true };
-  }
-
-  const userId = payload.sub;
-  const sessionId = payload.sid;
-  const tokenHash = hashToken(refreshToken);
+  // decode refresh to get exp
+  const decoded = jwt.decode(refreshToken);
+  const expiresAt = decoded?.exp ? new Date(decoded.exp * 1000) : new Date(Date.now() + 30 * 86400 * 1000);
 
   await pool.query(
     `
-    update auth_sessions
-    set revoked_at = now()
-    where id=$1 and user_id=$2 and refresh_hash=$3 and revoked_at is null
+    INSERT INTO auth_sessions (id, user_id, refresh_hash, user_agent, ip, created_at, expires_at)
+    VALUES (uuid_generate_v4(), $1, $2, $3, $4, now(), $5)
     `,
-    [sessionId, userId, tokenHash]
+    [userId, refreshHash, meta.userAgent || null, meta.ip || null, expiresAt]
   );
 
-  return { ok: true };
+  return { accessToken, refreshToken };
+}
+
+async function rotateRefreshToken(refreshToken, meta = {}) {
+  // 1) Verify refresh token signature
+  let payload;
+  try {
+    payload = jwt.verify(refreshToken, JWT_REFRESH_SECRET);
+  } catch (e) {
+    const err = new Error('Unauthorized: invalid refresh token');
+    err.status = 401;
+    throw err;
+  }
+
+  const userId = payload.sub;
+  const tenantId = payload.tenantId;
+  const roles = payload.roles || [];
+
+  // 2) Find active session for this user (not revoked and not expired)
+  // We store only hash; so we must fetch candidate sessions and compare.
+  const { rows: sessions } = await pool.query(
+    `
+    SELECT id, refresh_hash
+    FROM auth_sessions
+    WHERE user_id = $1
+      AND revoked_at IS NULL
+      AND expires_at > now()
+    ORDER BY created_at DESC
+    LIMIT 20
+    `,
+    [userId]
+  );
+
+  let matchedSession = null;
+  for (const s of sessions) {
+    const ok = await bcrypt.compare(refreshToken, s.refresh_hash);
+    if (ok) {
+      matchedSession = s;
+      break;
+    }
+  }
+
+  if (!matchedSession) {
+    const err = new Error('Unauthorized: refresh session not found');
+    err.status = 401;
+    throw err;
+  }
+
+  // 3) Issue new tokens
+  const newPayload = { sub: userId, tenantId, roles };
+  const newAccessToken = signAccessToken(newPayload);
+  const newRefreshToken = signRefreshToken(newPayload);
+  const newRefreshHash = await bcrypt.hash(newRefreshToken, 10);
+
+  const decodedNew = jwt.decode(newRefreshToken);
+  const newExpiresAt = decodedNew?.exp ? new Date(decodedNew.exp * 1000) : new Date(Date.now() + 30 * 86400 * 1000);
+
+  // 4) Rotate the stored hash in the same session (keeps single session record)
+  await pool.query(
+    `
+    UPDATE auth_sessions
+    SET refresh_hash = $1,
+        user_agent = COALESCE($2, user_agent),
+        ip = COALESCE($3, ip),
+        expires_at = $4
+    WHERE id = $5
+    `,
+    [newRefreshHash, meta.userAgent || null, meta.ip || null, newExpiresAt, matchedSession.id]
+  );
+
+  return { accessToken: newAccessToken, refreshToken: newRefreshToken };
+}
+
+async function revokeRefreshToken(refreshToken) {
+  // optional: logout support
+  let payload;
+  try {
+    payload = jwt.verify(refreshToken, JWT_REFRESH_SECRET);
+  } catch {
+    return; // ignore
+  }
+
+  const userId = payload.sub;
+
+  const { rows: sessions } = await pool.query(
+    `
+    SELECT id, refresh_hash
+    FROM auth_sessions
+    WHERE user_id = $1
+      AND revoked_at IS NULL
+    ORDER BY created_at DESC
+    LIMIT 20
+    `,
+    [userId]
+  );
+
+  for (const s of sessions) {
+    const ok = await bcrypt.compare(refreshToken, s.refresh_hash);
+    if (ok) {
+      await pool.query(`UPDATE auth_sessions SET revoked_at = now() WHERE id = $1`, [s.id]);
+      break;
+    }
+  }
 }
 
 module.exports = {
-  login,
-  refresh,
-  logout,
-  signAccessToken, // (اختياري)
+  issueTokensForUser,
+  rotateRefreshToken,
+  revokeRefreshToken,
 };

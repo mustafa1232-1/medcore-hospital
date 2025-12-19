@@ -1,132 +1,218 @@
+// src/modules/auth/auth.controller.js
 const bcrypt = require('bcryptjs');
 const pool = require('../../db/pool');
 const authService = require('./auth.service');
 
-// POST /api/auth/register-tenant
-async function registerTenant(req, res) {
-  const {
-    name,
-    type,
-    phone,
-    email,
-    adminFullName,
-    adminEmail,
-    adminPhone,
-    adminPassword,
-  } = req.body;
-
-  if (!name || !type || !adminFullName || !adminPassword) {
-    return res.status(400).json({ message: 'Missing required fields' });
-  }
-
+async function registerTenant(req, res, next) {
   const client = await pool.connect();
   try {
+    const {
+      name,
+      type,
+      phone,
+      email,
+      adminFullName,
+      adminEmail,
+      adminPhone,
+      adminPassword,
+    } = req.body;
+
     await client.query('BEGIN');
 
-    const tenantR = await client.query(
+    // 1) create tenant
+    const tenantQ = await client.query(
       `
-      insert into tenants (name, type, phone, email)
-      values ($1, $2, $3, $4)
-      returning id, name, type, phone, email, created_at
+      INSERT INTO tenants (name, type, phone, email)
+      VALUES ($1, $2, $3, $4)
+      RETURNING id, name, type, phone, email, created_at
       `,
       [name, type, phone || null, email || null]
     );
 
-    const tenant = tenantR.rows[0];
+    const tenant = tenantQ.rows[0];
 
-    // Create roles (ADMIN, DOCTOR, NURSE, PHARMACY, LAB)
-    const roles = ['ADMIN', 'DOCTOR', 'NURSE', 'PHARMACY', 'LAB'];
-    const roleIds = {};
+    // 2) create admin user
+    const password_hash = await bcrypt.hash(adminPassword, 10);
 
-    for (const roleName of roles) {
-      const rr = await client.query(
-        `
-        insert into roles (tenant_id, name)
-        values ($1, $2)
-        on conflict (tenant_id, name) do update set name=excluded.name
-        returning id, name
-        `,
-        [tenant.id, roleName]
-      );
-      roleIds[roleName] = rr.rows[0].id;
-    }
-
-    const passwordHash = await bcrypt.hash(adminPassword, 12);
-
-    const adminR = await client.query(
+    const userQ = await client.query(
       `
-      insert into users (tenant_id, full_name, email, phone, password_hash, is_active)
-      values ($1, $2, $3, $4, $5, true)
-    returning id, tenant_id, full_name, email, phone, is_active, created_at
+      INSERT INTO users (tenant_id, full_name, email, phone, password_hash)
+      VALUES ($1, $2, $3, $4, $5)
+      RETURNING 
+        id,
+        tenant_id AS "tenantId",
+        full_name AS "fullName",
+        email,
+        phone
       `,
-      [tenant.id, adminFullName, adminEmail || null, adminPhone || null, passwordHash]
+      [tenant.id, adminFullName, adminEmail || null, adminPhone || null, password_hash]
     );
 
-    const admin = adminR.rows[0];
+    const admin = userQ.rows[0];
 
+    // 3) ensure ADMIN role exists for this tenant
+    const roleQ = await client.query(
+      `
+      INSERT INTO roles (tenant_id, name)
+      VALUES ($1, 'ADMIN')
+      ON CONFLICT (tenant_id, name) DO UPDATE SET name = EXCLUDED.name
+      RETURNING id, name
+      `,
+      [tenant.id]
+    );
+
+    const role = roleQ.rows[0];
+
+    // 4) attach role to user
     await client.query(
       `
-      insert into user_roles (user_id, role_id)
-      values ($1, $2)
-      on conflict do nothing
+      INSERT INTO user_roles (user_id, role_id)
+      VALUES ($1, $2)
+      ON CONFLICT DO NOTHING
       `,
-      [admin.id, roleIds.ADMIN]
+      [admin.id, role.id]
     );
 
     await client.query('COMMIT');
 
     return res.status(201).json({
-      tenant,
+      tenant: {
+        id: tenant.id,
+        name: tenant.name,
+        type: tenant.type,
+        phone: tenant.phone,
+        email: tenant.email,
+        created_at: tenant.created_at,
+      },
       admin: {
         id: admin.id,
-        tenantId: admin.tenant_id,
-        fullName: admin.full_name,
+        tenantId: admin.tenantId,
+        fullName: admin.fullName,
         email: admin.email,
         phone: admin.phone,
       },
     });
-  } catch (e) {
-    await client.query('ROLLBACK');
-    throw e;
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch {}
+    return next(err);
   } finally {
     client.release();
   }
 }
 
-// POST /api/auth/login
-async function login(req, res) {
-  const { tenantId, email, phone, password } = req.body;
+async function login(req, res, next) {
+  try {
+    const { tenantId, email, phone, password } = req.body;
 
-  const result = await authService.login({
-    tenantId,
-    email,
-    phone,
-    password,
-    userAgent: req.headers['user-agent'],
-    ip: req.ip,
-  });
+    // 1) find user within tenant by email or phone
+    const params = [tenantId];
+    let where = `tenant_id = $1`;
 
-  res.json(result);
+    if (email) {
+      params.push(email);
+      where += ` AND email = $2`;
+    } else {
+      params.push(phone);
+      where += ` AND phone = $2`;
+    }
+
+    const userQ = await pool.query(
+      `
+      SELECT
+        id,
+        tenant_id AS "tenantId",
+        full_name AS "fullName",
+        email,
+        phone,
+        password_hash,
+        is_active AS "isActive",
+        created_at AS "createdAt"
+      FROM users
+      WHERE ${where}
+      LIMIT 1
+      `,
+      params
+    );
+
+    if (userQ.rowCount === 0) {
+      return res.status(401).json({ message: 'Invalid credentials' });
+    }
+
+    const u = userQ.rows[0];
+
+    if (!u.isActive) {
+      return res.status(403).json({ message: 'User is inactive' });
+    }
+
+    const ok = await bcrypt.compare(password, u.password_hash);
+    if (!ok) {
+      return res.status(401).json({ message: 'Invalid credentials' });
+    }
+
+    // 2) roles
+    const rolesQ = await pool.query(
+      `
+      SELECT r.name
+      FROM user_roles ur
+      JOIN roles r ON r.id = ur.role_id
+      WHERE ur.user_id = $1
+      ORDER BY r.name
+      `,
+      [u.id]
+    );
+
+    const roles = rolesQ.rows.map((x) => x.name);
+
+    // 3) issue tokens and persist refresh session
+    const tokens = await authService.issueTokensForUser(
+      { userId: u.id, tenantId: u.tenantId, roles },
+      { userAgent: req.headers['user-agent'], ip: req.ip }
+    );
+
+    // remove password hash from response
+    delete u.password_hash;
+
+    return res.json({
+      ...tokens,
+      user: {
+        ...u,
+        roles,
+      },
+    });
+  } catch (err) {
+    return next(err);
+  }
 }
 
-// POST /api/auth/refresh
-async function refresh(req, res) {
-  const { refreshToken } = req.body;
+async function refresh(req, res, next) {
+  try {
+    const { refreshToken } = req.body;
 
-  const result = await authService.refresh({
-    refreshToken,
-    userAgent: req.headers['user-agent'],
-    ip: req.ip,
-  });
+    if (!refreshToken) {
+      return res.status(400).json({ message: 'refreshToken is required' });
+    }
 
-  res.json(result);
+    const tokens = await authService.rotateRefreshToken(refreshToken, {
+      userAgent: req.headers['user-agent'],
+      ip: req.ip,
+    });
+
+    return res.json(tokens);
+  } catch (err) {
+    return next(err);
+  }
 }
 
-// POST /api/auth/logout
-async function logout(req, res) {
-  const { refreshToken } = req.body;
-  const result = await authService.logout({ refreshToken });
-  res.json(result);
+async function logout(req, res, next) {
+  try {
+    const { refreshToken } = req.body;
+    if (refreshToken) {
+      await authService.revokeRefreshToken(refreshToken);
+    }
+    return res.json({ ok: true });
+  } catch (err) {
+    return next(err);
+  }
 }
 
 module.exports = {
