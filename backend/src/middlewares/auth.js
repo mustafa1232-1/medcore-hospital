@@ -1,13 +1,18 @@
+// src/middlewares/auth.js
 const jwt = require('jsonwebtoken');
 
-const JWT_ACCESS_SECRET = process.env.JWT_ACCESS_SECRET;
+function mustEnv(name) {
+  const v = process.env[name];
+  if (!v) throw new Error(`Missing env: ${name}`);
+  return v;
+}
+
+const JWT_ACCESS_SECRET = mustEnv('JWT_ACCESS_SECRET');
 
 function requireAuth(req, res, next) {
   try {
     const header = req.headers.authorization || '';
-    const token = header.startsWith('Bearer ')
-      ? header.slice(7)
-      : null;
+    const token = header.startsWith('Bearer ') ? header.slice(7) : null;
 
     if (!token) {
       return res.status(401).json({ message: 'Unauthorized' });
@@ -15,12 +20,12 @@ function requireAuth(req, res, next) {
 
     const payload = jwt.verify(token, JWT_ACCESS_SECRET);
 
-    // 🔴 هذا السطر مهم جداً
+    // payload يحتوي sub + tenantId + roles + iat + exp
     req.user = payload;
 
-    next();
-  } catch (e) {
-    return res.status(401).json({ message: 'Invalid token' });
+    return next();
+  } catch (err) {
+    return res.status(401).json({ message: 'Unauthorized: invalid token' });
   }
 }
 

@@ -11,27 +11,18 @@ const meRoutes = require('./routes/me.routes');
 
 const app = express();
 
-// Middlewares
 app.use(helmet());
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
 app.use(morgan('dev'));
 
-// Health
 app.get('/health', (req, res) => res.json({ ok: true }));
 
-// Routes
 app.use('/api/auth', authRoutes);
 app.use('/api', meRoutes);
 
-// 404 handler (اختياري لكنه مفيد)
-app.use((req, res) => {
-  res.status(404).json({ message: 'Not Found', path: req.path });
-});
-
-// Error handler
+// Error handler (آخر شيء)
 app.use((err, req, res, next) => {
-  console.error('❌ Error:', err);
   const status = err.status || 500;
   res.status(status).json({
     message: err.message || 'Server error',
