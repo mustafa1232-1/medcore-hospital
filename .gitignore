@@ -1,0 +1,20 @@
+# Node
+node_modules
+.env
+.env.*
+
+# Flutter / Dart
+.dart_tool
+build
+android/.gradle
+android/app/build
+ios/Pods
+ios/.symlinks
+
+# Prisma / DB
+/generated/prisma
+
+# OS / IDE
+.vscode
+.idea
+.DS_Store
