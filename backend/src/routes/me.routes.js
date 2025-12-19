@@ -6,7 +6,10 @@ const router = express.Router();
 
 // GET /api/me
 router.get('/me', requireAuth, (req, res) => {
-  res.json({ ok: true, user: req.user });
+  res.json({
+    ok: true,
+    user: req.user
+  });
 });
 
 module.exports = router;
