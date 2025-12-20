@@ -23,7 +23,7 @@ const {
 router.get(
   '/',
   requireAuth,
-  requireRole('RECEPTION'),
+  requireRole('RECEPTION', 'ADMIN' , 'DOCTOR'),
   patientsController.listPatients
 );
 
@@ -31,7 +31,7 @@ router.get(
 router.post(
   '/',
   requireAuth,
-  requireRole('RECEPTION'),
+  requireRole('RECEPTION', 'ADMIN' , 'DOCTOR'),
   validateBody(createPatientSchema),
   patientsController.createPatient
 );
@@ -40,7 +40,7 @@ router.post(
 router.get(
   '/:id',
   requireAuth,
-  requireRole('RECEPTION'),
+  requireRole('RECEPTION', 'ADMIN' , 'DOCTOR'),
   patientsController.getPatientById
 );
 
@@ -48,7 +48,7 @@ router.get(
 router.patch(
   '/:id',
   requireAuth,
-  requireRole('RECEPTION'),
+  requireRole('RECEPTION', 'ADMIN' , 'DOCTOR'),
   validateBody(updatePatientSchema),
   patientsController.updatePatient
 );
