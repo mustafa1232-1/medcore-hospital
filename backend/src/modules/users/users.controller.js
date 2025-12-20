@@ -1,6 +1,6 @@
 // src/modules/users/users.controller.js
 const usersService = require('./users.service');
-const passwordService = require('../auth/password.service'); // NEW
+const passwordService = require('../auth/password.service'); // ✅ reuse the same service
 
 async function listUsers(req, res, next) {
   try {
@@ -53,19 +53,25 @@ async function setActive(req, res, next) {
   }
 }
 
-// NEW
+// ✅ NEW: reset password (ADMIN)
 async function resetPassword(req, res, next) {
   try {
     const tenantId = req.user?.tenantId;
     const targetUserId = req.params.id;
 
-    await passwordService.adminResetPassword({
+    if (!tenantId) {
+      return res.status(401).json({ message: 'Unauthorized: invalid payload' });
+    }
+
+    const { newPassword } = req.body;
+
+    const result = await passwordService.adminResetPassword({
       tenantId,
       targetUserId,
-      newPassword: req.body.newPassword,
+      newPassword,
     });
 
-    return res.json({ ok: true });
+    return res.json(result);
   } catch (err) {
     return next(err);
   }
@@ -75,5 +81,5 @@ module.exports = {
   listUsers,
   createUser,
   setActive,
-  resetPassword,
+  resetPassword, // ✅ export
 };

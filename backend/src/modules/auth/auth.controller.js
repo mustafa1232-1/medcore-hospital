@@ -2,6 +2,7 @@
 const bcrypt = require('bcryptjs');
 const pool = require('../../db/pool');
 const authService = require('./auth.service');
+const passwordService = require('./password.service'); // ✅ use service
 
 async function registerTenant(req, res, next) {
   const client = await pool.connect();
@@ -23,7 +24,7 @@ async function registerTenant(req, res, next) {
     const tenantQ = await client.query(
       `
       INSERT INTO tenants (id, name, type, phone, email, created_at)
-      VALUES (gen_random_uuid(), $1, $2, $3, $4, now())
+      VALUES (uuid_generate_v4(), $1, $2, $3, $4, now()) -- ✅ FIX
       RETURNING id, name, type, phone, email, created_at
       `,
       [name, type, phone || null, email || null]
@@ -166,10 +167,6 @@ async function refresh(req, res, next) {
   try {
     const { refreshToken } = req.body;
 
-    if (!refreshToken) {
-      return res.status(400).json({ message: 'refreshToken is required' });
-    }
-
     const tokens = await authService.rotateRefreshToken(refreshToken, {
       userAgent: req.headers['user-agent'],
       ip: req.ip,
@@ -193,7 +190,7 @@ async function logout(req, res, next) {
   }
 }
 
-// ✅ NEW: Change own password (requires requireAuth middleware in route)
+// ✅ Change own password
 async function changePassword(req, res, next) {
   try {
     const tenantId = req.user?.tenantId;
@@ -205,46 +202,14 @@ async function changePassword(req, res, next) {
 
     const { currentPassword, newPassword } = req.body;
 
-    // 1) read current hash
-    const userQ = await pool.query(
-      `
-      SELECT password_hash AS "passwordHash", is_active AS "isActive"
-      FROM users
-      WHERE id = $1 AND tenant_id = $2
-      LIMIT 1
-      `,
-      [userId, tenantId]
-    );
+    const result = await passwordService.changeOwnPassword({
+      tenantId,
+      userId,
+      currentPassword,
+      newPassword,
+    });
 
-    if (userQ.rowCount === 0) {
-      return res.status(404).json({ message: 'User not found' });
-    }
-
-    const u = userQ.rows[0];
-    if (!u.isActive) {
-      return res.status(403).json({ message: 'User is inactive' });
-    }
-
-    // 2) verify current password
-    const ok = await bcrypt.compare(currentPassword, u.passwordHash);
-    if (!ok) {
-      return res.status(400).json({ message: 'Invalid current password' });
-    }
-
-    // 3) write new hash
-    const newHash = await bcrypt.hash(newPassword, 10);
-
-    await pool.query(
-      `
-      UPDATE users
-      SET password_hash = $1
-      WHERE id = $2 AND tenant_id = $3
-      `,
-      [newHash, userId, tenantId]
-    );
-
-    // (اختياري لاحقاً): revoke sessions for this user
-    return res.json({ ok: true });
+    return res.json(result);
   } catch (err) {
     return next(err);
   }
@@ -255,5 +220,5 @@ module.exports = {
   login,
   refresh,
   logout,
-  changePassword, // ✅ export
+  changePassword,
 };
