@@ -13,6 +13,12 @@ const rolesRoutes = require('./modules/roles/roles.routes');
 const facilityRoutes = require('./modules/facility/facility.routes');
 const usersRoutes = require('./modules/users/users.routes');
 
+// ✅ NEW: Patients module
+const patientsRoutes = require('./modules/patients/patients.routes');
+
+// (لاحقاً) ✅ NEW: Admissions module
+// const admissionsRoutes = require('./modules/admissions/admissions.routes');
+
 const app = express();
 
 app.use(helmet());
@@ -27,6 +33,12 @@ app.use('/api', meRoutes); // contains /me
 app.use('/api/roles', rolesRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/facility', facilityRoutes);
+
+// ✅ NEW
+app.use('/api/patients', patientsRoutes);
+
+// ✅ (لاحقاً)
+// app.use('/api/admissions', admissionsRoutes);
 
 // 404 JSON (بدل Cannot POST ...)
 app.use((req, res) => {
