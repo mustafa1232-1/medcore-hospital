@@ -1,6 +1,7 @@
 // src/modules/auth/auth.service.js
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const pool = require('../../db/pool');
 const { HttpError } = require('../../utils/httpError');
 
@@ -23,6 +24,33 @@ function signRefreshToken(payload) {
   return jwt.sign(payload, JWT_REFRESH_SECRET, { expiresIn: JWT_REFRESH_EXPIRES_IN });
 }
 
+function isUuid(v) {
+  return typeof v === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
+}
+
+// ✅ Resolve tenant identifier:
+// - If UUID => use as tenantId
+// - Else treat as tenant code and resolve to UUID from DB
+async function resolveTenantId(tenantOrId) {
+  if (!tenantOrId) return null;
+
+  if (isUuid(tenantOrId)) return tenantOrId;
+
+  const q = await pool.query(
+    `
+    SELECT id
+    FROM tenants
+    WHERE code = $1
+    LIMIT 1
+    `,
+    [String(tenantOrId).trim()]
+  );
+
+  if (q.rowCount === 0) return null;
+  return q.rows[0].id;
+}
+
 async function getUserRoles({ tenantId, userId }) {
   const q = await pool.query(
     `
@@ -35,7 +63,7 @@ async function getUserRoles({ tenantId, userId }) {
     [userId, tenantId]
   );
 
-  return q.rows.map(r => r.name);
+  return q.rows.map((r) => r.name);
 }
 
 async function issueTokensForUser({ userId, tenantId, roles }, meta = {}) {
@@ -156,12 +184,21 @@ async function revokeRefreshToken(refreshToken) {
 
 /**
  * ✅ login used by controller
- * Accepts either email or phone with tenantId
+ * Backward compatible:
+ * - Old: tenantId (UUID)
+ * - New: tenant (code OR UUID)
+ * Accepts either email or phone
  */
-async function login({ tenantId, email, phone, password }, meta = {}) {
-  if (!tenantId) throw new HttpError(400, 'tenantId is required');
+async function login({ tenantId, tenant, email, phone, password }, meta = {}) {
+  // ✅ keep old behavior (tenantId required) but allow tenant as alias
+  const tenantIdentifier = tenant || tenantId;
+
+  if (!tenantIdentifier) throw new HttpError(400, 'tenantId is required');
   if (!password) throw new HttpError(400, 'password is required');
   if (!email && !phone) throw new HttpError(400, 'email or phone is required');
+
+  const resolvedTenantId = await resolveTenantId(tenantIdentifier);
+  if (!resolvedTenantId) throw new HttpError(401, 'Invalid tenant');
 
   const q = await pool.query(
     `
@@ -182,7 +219,7 @@ async function login({ tenantId, email, phone, password }, meta = {}) {
       )
     LIMIT 1
     `,
-    [tenantId, email || null, phone || null]
+    [resolvedTenantId, email || null, phone || null]
   );
 
   if (q.rowCount === 0) throw new HttpError(401, 'Invalid credentials');
@@ -289,6 +326,5 @@ module.exports = {
   refresh,
   logout,
 
-  // ✅ added
   changePassword,
 };

@@ -1,9 +1,37 @@
 // src/modules/auth/auth.controller.js
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const pool = require('../../db/pool');
 
 const authService = require('./auth.service');
 const rolesService = require('../roles/roles.service');
+
+function slugify(input) {
+  const s = String(input || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-+|-+$)/g, '');
+  return s || 'tenant';
+}
+
+function shortSuffix4() {
+  // 4 chars hex
+  return crypto.randomBytes(2).toString('hex');
+}
+
+async function generateUniqueTenantCode(client, name) {
+  const base0 = slugify(name);
+  const base = base0.length > 16 ? base0.slice(0, 16) : base0;
+
+  // retry few times on collision
+  for (let i = 0; i < 10; i++) {
+    const code = `${base}-${shortSuffix4()}`;
+    const chk = await client.query(`SELECT 1 FROM tenants WHERE code = $1 LIMIT 1`, [code]);
+    if (chk.rowCount === 0) return code;
+  }
+  throw new Error('Failed to generate unique tenant code');
+}
 
 module.exports = {
   async registerTenant(req, res, next) {
@@ -22,20 +50,24 @@ module.exports = {
 
       await client.query('BEGIN');
 
+      // ✅ NEW: generate short tenant code (does not change old logic)
+      const code = await generateUniqueTenantCode(client, name);
+
       // 1) Create tenant
       const tenantQ = await client.query(
         `
-        INSERT INTO tenants (id, name, type, phone, email, created_at)
-        VALUES (uuid_generate_v4(), $1, $2, $3, $4, now())
+        INSERT INTO tenants (id, name, type, phone, email, code, created_at)
+        VALUES (uuid_generate_v4(), $1, $2, $3, $4, $5, now())
         RETURNING 
           id, 
           name, 
           type, 
           phone, 
           email, 
+          code,
           created_at AS "createdAt"
         `,
-        [name, type, phone || null, email || null]
+        [name, type, phone || null, email || null, code]
       );
 
       const tenant = tenantQ.rows[0];
@@ -98,8 +130,11 @@ module.exports = {
 
   async login(req, res, next) {
     try {
-      const { tenantId, email, phone, password } = req.body;
-      const result = await authService.login({ tenantId, email, phone, password });
+      // ✅ Backward compatible:
+      // - Old body: { tenantId, email/phone, password }
+      // - New body: { tenant, email/phone, password }  (tenant is code OR uuid)
+      const { tenantId, tenant, email, phone, password } = req.body;
+      const result = await authService.login({ tenantId, tenant, email, phone, password });
       return res.json(result);
     } catch (err) {
       return next(err);

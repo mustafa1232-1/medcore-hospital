@@ -13,12 +13,20 @@ const registerTenantSchema = z.object({
   adminPassword: z.string().min(6),
 });
 
+// ✅ Backward compatible:
+// - Old clients: tenantId (UUID)
+// - New clients: tenant (code OR UUID)
 const loginSchema = z
   .object({
-    tenantId: z.string().uuid(),
+    tenantId: z.string().uuid().optional(),
+    tenant: z.string().min(1).optional(), // code OR uuid (we resolve in service)
     email: z.string().email().optional(),
     phone: z.string().optional(),
     password: z.string().min(1),
+  })
+  .refine((d) => d.tenant || d.tenantId, {
+    message: 'tenant or tenantId is required',
+    path: ['tenant'],
   })
   .refine((d) => d.email || d.phone, {
     message: 'email or phone is required',

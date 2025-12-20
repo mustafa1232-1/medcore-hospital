@@ -6,25 +6,13 @@ module.exports = {
     try {
       const tenantId = req.user.tenantId;
 
+      // ✅ نمرر Query كما هو للسيرفس (بدون تغيير أي routes)
       const result = await patientsService.listPatients({
         tenantId,
-        q: req.query.q,
-        phone: req.query.phone,
-        gender: req.query.gender,
-        isActive: req.query.isActive,
-        dobFrom: req.query.dobFrom,
-        dobTo: req.query.dobTo,
-        createdFrom: req.query.createdFrom,
-        createdTo: req.query.createdTo,
-        limit: req.query.limit,
-        offset: req.query.offset,
+        query: req.query,
       });
 
-      // ✅ لا نكسر الشكل القديم: items موجود دائماً
-      return res.json({
-        items: result.items,
-        meta: result.meta,
-      });
+      return res.json(result);
     } catch (err) {
       return next(err);
     }

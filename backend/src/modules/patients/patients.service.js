@@ -17,20 +17,39 @@ function clampInt(n, { min, max, fallback }) {
   return Math.min(Math.max(x, min), max);
 }
 
-async function listPatients({
-  tenantId,
-  q,
-  phone,
-  gender,
-  isActive,
-  dobFrom,
-  dobTo,
-  createdFrom,
-  createdTo,
-  limit,
-  offset,
-}) {
+async function listPatients(input) {
+  const {
+    tenantId,
+
+    // ✅ الجديد
+    query,
+
+    // ✅ القديم (للتوافق وعدم كسر أي استدعاء قديم)
+    q: qOld,
+    phone: phoneOld,
+    gender: genderOld,
+    isActive: isActiveOld,
+    dobFrom: dobFromOld,
+    dobTo: dobToOld,
+    createdFrom: createdFromOld,
+    createdTo: createdToOld,
+    limit: limitOld,
+    offset: offsetOld,
+  } = input || {};
+
   if (!tenantId) throw new HttpError(400, 'Missing tenantId');
+
+  // ✅ مصدر القيم: query أولاً، وإذا غير موجود نرجع للقديم
+  const q = query?.q ?? qOld;
+  const phone = query?.phone ?? phoneOld;
+  const gender = query?.gender ?? genderOld;
+  const isActive = query?.isActive ?? isActiveOld;
+  const dobFrom = query?.dobFrom ?? dobFromOld;
+  const dobTo = query?.dobTo ?? dobToOld;
+  const createdFrom = query?.createdFrom ?? createdFromOld;
+  const createdTo = query?.createdTo ?? createdToOld;
+  const limit = query?.limit ?? limitOld;
+  const offset = query?.offset ?? offsetOld;
 
   const where = ['p.tenant_id = $1'];
   const params = [tenantId];
@@ -101,6 +120,7 @@ async function listPatients({
 
   // list
   params.push(safeLimit, safeOffset);
+
   const listSql = `
     SELECT
       p.id,
