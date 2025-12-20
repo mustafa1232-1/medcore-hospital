@@ -1,14 +1,26 @@
 // src/middlewares/roles.js
+const { HttpError } = require('../utils/httpError');
 
-function requireRole(...allowed) {
-  const allowedSet = new Set(allowed);
+function roleNameOf(r) {
+  if (!r) return '';
+  if (typeof r === 'string') return r;
+  if (typeof r === 'object' && r.name) return String(r.name);
+  return '';
+}
 
-  return (req, res, next) => {
-    const roles = req.user?.roles || [];
+function normalize(name) {
+  return String(name || '').toUpperCase().trim();
+}
 
-    const ok = roles.some((r) => allowedSet.has(r));
-    if (!ok) {
-      return res.status(403).json({ message: 'Forbidden: insufficient role' });
+function requireRole(role) {
+  const needed = normalize(role);
+
+  return (req, _res, next) => {
+    const rolesRaw = Array.isArray(req.user?.roles) ? req.user.roles : [];
+    const roles = rolesRaw.map(roleNameOf).map(normalize).filter(Boolean);
+
+    if (!roles.includes(needed)) {
+      return next(new HttpError(403, 'Forbidden'));
     }
 
     return next();
