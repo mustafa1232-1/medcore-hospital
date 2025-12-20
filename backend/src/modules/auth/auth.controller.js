@@ -3,7 +3,7 @@ const bcrypt = require('bcryptjs');
 const pool = require('../../db/pool');
 const authService = require('./auth.service');
 const passwordService = require('./password.service'); // ✅ use service
-
+const rolesService = require('../roles/roles.service'); // ✅ add this
 async function registerTenant(req, res, next) {
   const client = await pool.connect();
   try {
@@ -73,6 +73,9 @@ async function registerTenant(req, res, next) {
       `,
       [admin.id, roleId]
     );
+    // ✅ seed default roles for this tenant (idempotent)
+await rolesService.ensureDefaultRolesForTenant(tenant.id);
+
 
     await client.query('COMMIT');
 
@@ -83,6 +86,7 @@ async function registerTenant(req, res, next) {
   } finally {
     client.release();
   }
+  
 }
 
 async function login(req, res, next) {

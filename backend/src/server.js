@@ -8,9 +8,7 @@ const morgan = require('morgan');
 
 const authRoutes = require('./modules/auth/auth.routes');
 const meRoutes = require('./routes/me.routes');
-
-// NEW
-const usersRoutes = require('./modules/users/users.routes');
+const rolesRoutes = require('./modules/roles/roles.routes'); // ✅ NEW
 
 const app = express();
 
@@ -23,9 +21,7 @@ app.get('/health', (req, res) => res.json({ ok: true }));
 
 app.use('/api/auth', authRoutes);
 app.use('/api', meRoutes);
-
-// NEW: /api/users
-app.use('/api/users', usersRoutes);
+app.use('/api/roles', rolesRoutes); // ✅ NEW
 
 // Error handler (آخر شيء)
 app.use((err, req, res, next) => {
