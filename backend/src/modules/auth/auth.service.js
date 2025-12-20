@@ -155,7 +155,7 @@ async function revokeRefreshToken(refreshToken) {
 }
 
 /**
- * ✅ NEW: login used by controller
+ * ✅ login used by controller
  * Accepts either email or phone with tenantId
  */
 async function login({ tenantId, email, phone, password }, meta = {}) {
@@ -185,26 +185,17 @@ async function login({ tenantId, email, phone, password }, meta = {}) {
     [tenantId, email || null, phone || null]
   );
 
-  if (q.rowCount === 0) {
-    throw new HttpError(401, 'Invalid credentials');
-  }
+  if (q.rowCount === 0) throw new HttpError(401, 'Invalid credentials');
 
   const user = q.rows[0];
 
-  if (!user.isActive) {
-    throw new HttpError(403, 'User is inactive');
-  }
+  if (!user.isActive) throw new HttpError(403, 'User is inactive');
 
   const ok = await bcrypt.compare(password, user.passwordHash);
-  if (!ok) {
-    throw new HttpError(401, 'Invalid credentials');
-  }
+  if (!ok) throw new HttpError(401, 'Invalid credentials');
 
   const roles = await getUserRoles({ tenantId: user.tenantId, userId: user.id });
-  const tokens = await issueTokensForUser(
-    { userId: user.id, tenantId: user.tenantId, roles },
-    meta
-  );
+  const tokens = await issueTokensForUser({ userId: user.id, tenantId: user.tenantId, roles }, meta);
 
   return {
     ok: true,
@@ -221,7 +212,7 @@ async function login({ tenantId, email, phone, password }, meta = {}) {
 }
 
 /**
- * ✅ NEW: refresh used by controller
+ * ✅ refresh used by controller
  */
 async function refresh({ refreshToken }, meta = {}) {
   const tokens = await rotateRefreshToken(refreshToken, meta);
@@ -229,10 +220,63 @@ async function refresh({ refreshToken }, meta = {}) {
 }
 
 /**
- * ✅ NEW: logout used by controller
+ * ✅ logout used by controller
  */
 async function logout({ refreshToken }) {
   await revokeRefreshToken(refreshToken);
+  return { ok: true };
+}
+
+/**
+ * ✅ NEW: change password used by controller
+ * Minimal, secure: verifies current password, updates hash, revokes active refresh sessions
+ */
+async function changePassword(userPayload, { currentPassword, newPassword }) {
+  const userId = userPayload?.sub;
+  const tenantId = userPayload?.tenantId;
+
+  if (!userId || !tenantId) throw new HttpError(401, 'Unauthorized');
+  if (!currentPassword) throw new HttpError(400, 'currentPassword is required');
+  if (!newPassword) throw new HttpError(400, 'newPassword is required');
+  if (String(newPassword).length < 6) throw new HttpError(400, 'newPassword must be at least 6 chars');
+
+  const q = await pool.query(
+    `
+    SELECT password_hash AS "passwordHash", is_active AS "isActive"
+    FROM users
+    WHERE id = $1 AND tenant_id = $2
+    LIMIT 1
+    `,
+    [userId, tenantId]
+  );
+
+  if (q.rowCount === 0) throw new HttpError(404, 'User not found');
+  if (!q.rows[0].isActive) throw new HttpError(403, 'User is inactive');
+
+  const ok = await bcrypt.compare(currentPassword, q.rows[0].passwordHash);
+  if (!ok) throw new HttpError(401, 'Invalid current password');
+
+  const newHash = await bcrypt.hash(newPassword, 10);
+
+  await pool.query(
+    `
+    UPDATE users
+    SET password_hash = $1
+    WHERE id = $2 AND tenant_id = $3
+    `,
+    [newHash, userId, tenantId]
+  );
+
+  // revoke all active sessions (recommended)
+  await pool.query(
+    `
+    UPDATE auth_sessions
+    SET revoked_at = now()
+    WHERE user_id = $1 AND revoked_at IS NULL
+    `,
+    [userId]
+  );
+
   return { ok: true };
 }
 
@@ -241,8 +285,10 @@ module.exports = {
   rotateRefreshToken,
   revokeRefreshToken,
 
-  // ✅ exports required by controller
   login,
   refresh,
   logout,
+
+  // ✅ added
+  changePassword,
 };
