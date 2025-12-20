@@ -10,7 +10,7 @@ const facilityRoutes = require('./modules/facility/facility.routes');
 const authRoutes = require('./modules/auth/auth.routes');
 const meRoutes = require('./routes/me.routes');
 const rolesRoutes = require('./modules/roles/roles.routes');
-
+const usersRoutes = require('./modules/users/users.routes');
 const app = express();
 
 app.use(helmet());
@@ -23,6 +23,7 @@ app.get('/health', (req, res) => res.json({ ok: true }));
 app.use('/api/auth', authRoutes);
 app.use('/api', meRoutes);
 app.use('/api/roles', rolesRoutes);
+app.use('/api/users', usersRoutes);
 app.use('/api/facility', facilityRoutes);
 
 // Error handler (آخر شيء)
