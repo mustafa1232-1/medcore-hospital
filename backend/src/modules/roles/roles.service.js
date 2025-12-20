@@ -2,8 +2,8 @@
 const pool = require('../../db/pool');
 const { getDefaultRolesForTenantType } = require('./roles.catalog');
 
-async function getTenantType(tenantId) {
-  const q = await pool.query(
+async function getTenantType(tenantId, db = pool) {
+  const q = await db.query(
     `
     SELECT type
     FROM tenants
@@ -22,13 +22,12 @@ async function getTenantType(tenantId) {
   return q.rows[0].type;
 }
 
-async function ensureDefaultRolesForTenant(tenantId) {
-  const type = await getTenantType(tenantId);
+async function ensureDefaultRolesForTenant(tenantId, db = pool) {
+  const type = await getTenantType(tenantId, db);
   const roleNames = getDefaultRolesForTenantType(type);
 
-  // idempotent insert (unique tenant_id, name already exists)
   for (const name of roleNames) {
-    await pool.query(
+    await db.query(
       `
       INSERT INTO roles (tenant_id, name, created_at)
       VALUES ($1, $2, now())
@@ -37,28 +36,8 @@ async function ensureDefaultRolesForTenant(tenantId) {
       [tenantId, name]
     );
   }
-
-  return roleNames;
-}
-
-async function listRoles(tenantId) {
-  // ensure roles exist first (safe to call many times)
-  await ensureDefaultRolesForTenant(tenantId);
-
-  const rolesQ = await pool.query(
-    `
-    SELECT id, name
-    FROM roles
-    WHERE tenant_id = $1
-    ORDER BY name
-    `,
-    [tenantId]
-  );
-
-  return rolesQ.rows;
 }
 
 module.exports = {
-  listRoles,
   ensureDefaultRolesForTenant,
 };

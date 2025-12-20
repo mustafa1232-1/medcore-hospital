@@ -1,60 +1,64 @@
-// src/server.js
-require('dotenv').config();
+// src/modules/roles/roles.service.js
+const pool = require('../../db/pool');
+const { getDefaultRolesForTenantType } = require('./roles.catalog');
 
-const express = require('express');
-const cors = require('cors');
-const helmet = require('helmet');
-const morgan = require('morgan');
+async function getTenantType(tenantId, db = pool) {
+  const q = await db.query(
+    `
+    SELECT type
+    FROM tenants
+    WHERE id = $1
+    LIMIT 1
+    `,
+    [tenantId]
+  );
 
-const facilityRoutes = require('./modules/facility/facility.routes');
-const authRoutes = require('./modules/auth/auth.routes');
-const meRoutes = require('./routes/me.routes');
-const rolesRoutes = require('./modules/roles/roles.routes');
-const usersRoutes = require('./modules/users/users.routes');
-const app = express();
+  if (q.rowCount === 0) {
+    const err = new Error('Tenant not found');
+    err.status = 404;
+    throw err;
+  }
 
-app.use(helmet());
-app.use(cors());
-app.use(express.json({ limit: '1mb' }));
-app.use(morgan('dev'));
+  return q.rows[0].type;
+}
 
-app.get('/health', (req, res) => res.json({ ok: true }));
+async function ensureDefaultRolesForTenant(tenantId, db = pool) {
+  const type = await getTenantType(tenantId, db);
+  const roleNames = getDefaultRolesForTenantType(type);
 
-app.use('/api/auth', authRoutes);
-app.use('/api', meRoutes);
-app.use('/api/roles', rolesRoutes);
-app.use('/api/users', usersRoutes);
-app.use('/api/facility', facilityRoutes);
+  // idempotent insert (unique tenant_id, name already exists)
+  for (const name of roleNames) {
+    await db.query(
+      `
+      INSERT INTO roles (tenant_id, name, created_at)
+      VALUES ($1, $2, now())
+      ON CONFLICT (tenant_id, name) DO NOTHING
+      `,
+      [tenantId, name]
+    );
+  }
 
-// Error handler (آخر شيء)
-app.use((err, req, res, next) => {
-  const status = err.status || 500;
-  res.status(status).json({
-    message: err.message || 'Server error',
-    // اختياري للتشخيص: لا تكشف stack في الإنتاج
-    ...(process.env.NODE_ENV !== 'production' && err.details ? { details: err.details } : {}),
-  });
-});
+  return roleNames;
+}
 
-// ✅ تشخيص أخطاء غير ممسوكة (لا يغير اللوجك)
-process.on('unhandledRejection', (reason) => {
-  console.error('❌ Unhandled Rejection:', reason);
-});
+async function listRoles(tenantId) {
+  // ensure roles exist first (safe to call many times)
+  await ensureDefaultRolesForTenant(tenantId);
 
-process.on('uncaughtException', (err) => {
-  console.error('❌ Uncaught Exception:', err);
-});
+  const rolesQ = await pool.query(
+    `
+    SELECT id, name
+    FROM roles
+    WHERE tenant_id = $1
+    ORDER BY name
+    `,
+    [tenantId]
+  );
 
-const port = process.env.PORT || 8080;
+  return rolesQ.rows;
+}
 
-// ✅ امسك server object للتشخيص
-const server = app.listen(port, () => console.log(`API listening on :${port}`));
-
-server.on('error', (err) => {
-  console.error('❌ Server error:', err);
-});
-
-// ✅ إبقاء تتبع الخروج كما طلبت
-process.on('exit', (code) => {
-  console.log('🧯 Process exiting with code:', code);
-});
+module.exports = {
+  listRoles,
+  ensureDefaultRolesForTenant,
+};
