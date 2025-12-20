@@ -2,26 +2,34 @@
 const patientsService = require('./patients.service');
 
 module.exports = {
-  /**
-   * GET /api/patients
-   * Query:
-   *  - q: search by name / phone
-   */
   async listPatients(req, res, next) {
     try {
       const tenantId = req.user.tenantId;
-      const q = req.query.q || null;
 
-      const rows = await patientsService.listPatients({ tenantId, q });
-      return res.json({ items: rows });
+      const result = await patientsService.listPatients({
+        tenantId,
+        q: req.query.q,
+        phone: req.query.phone,
+        gender: req.query.gender,
+        isActive: req.query.isActive,
+        dobFrom: req.query.dobFrom,
+        dobTo: req.query.dobTo,
+        createdFrom: req.query.createdFrom,
+        createdTo: req.query.createdTo,
+        limit: req.query.limit,
+        offset: req.query.offset,
+      });
+
+      // ✅ لا نكسر الشكل القديم: items موجود دائماً
+      return res.json({
+        items: result.items,
+        meta: result.meta,
+      });
     } catch (err) {
       return next(err);
     }
   },
 
-  /**
-   * POST /api/patients
-   */
   async createPatient(req, res, next) {
     try {
       const tenantId = req.user.tenantId;
@@ -33,9 +41,6 @@ module.exports = {
     }
   },
 
-  /**
-   * GET /api/patients/:id
-   */
   async getPatientById(req, res, next) {
     try {
       const tenantId = req.user.tenantId;
@@ -48,9 +53,6 @@ module.exports = {
     }
   },
 
-  /**
-   * PATCH /api/patients/:id
-   */
   async updatePatient(req, res, next) {
     try {
       const tenantId = req.user.tenantId;

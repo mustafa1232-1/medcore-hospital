@@ -2,23 +2,106 @@
 const pool = require('../../db/pool');
 const { HttpError } = require('../../utils/httpError');
 
-async function listPatients({ tenantId, q }) {
+function toBool(v) {
+  if (v === undefined || v === null || v === '') return undefined;
+  if (typeof v === 'boolean') return v;
+  const s = String(v).toLowerCase();
+  if (s === 'true') return true;
+  if (s === 'false') return false;
+  return undefined;
+}
+
+function clampInt(n, { min, max, fallback }) {
+  const x = Number.parseInt(n, 10);
+  if (Number.isNaN(x)) return fallback;
+  return Math.min(Math.max(x, min), max);
+}
+
+async function listPatients({
+  tenantId,
+  q,
+  phone,
+  gender,
+  isActive,
+  dobFrom,
+  dobTo,
+  createdFrom,
+  createdTo,
+  limit,
+  offset,
+}) {
   if (!tenantId) throw new HttpError(400, 'Missing tenantId');
 
-  const search = q ? `%${String(q).toLowerCase()}%` : null;
-
+  const where = ['p.tenant_id = $1'];
   const params = [tenantId];
-  let where = 'p.tenant_id = $1';
+  let i = 2;
 
-  if (search) {
-    params.push(search);
-    where += ` AND (
-      LOWER(p.full_name) LIKE $${params.length}
-      OR p.phone LIKE $${params.length}
-    )`;
+  // q: search by name or phone (case-insensitive)
+  if (q) {
+    params.push(`%${String(q).toLowerCase()}%`);
+    where.push(`(LOWER(p.full_name) LIKE $${i} OR p.phone LIKE $${i})`);
+    i++;
   }
 
-  const sql = `
+  // phone contains
+  if (phone) {
+    params.push(`%${String(phone)}%`);
+    where.push(`p.phone LIKE $${i}`);
+    i++;
+  }
+
+  // gender exact
+  if (gender) {
+    params.push(String(gender));
+    where.push(`p.gender = $${i}`);
+    i++;
+  }
+
+  // isActive exact
+  const activeBool = toBool(isActive);
+  if (activeBool !== undefined) {
+    params.push(activeBool);
+    where.push(`p.is_active = $${i}`);
+    i++;
+  }
+
+  // date_of_birth range
+  if (dobFrom) {
+    params.push(dobFrom);
+    where.push(`p.date_of_birth >= $${i}::date`);
+    i++;
+  }
+  if (dobTo) {
+    params.push(dobTo);
+    where.push(`p.date_of_birth <= $${i}::date`);
+    i++;
+  }
+
+  // created_at range
+  if (createdFrom) {
+    params.push(createdFrom);
+    where.push(`p.created_at >= $${i}::timestamptz`);
+    i++;
+  }
+  if (createdTo) {
+    params.push(createdTo);
+    where.push(`p.created_at <= $${i}::timestamptz`);
+    i++;
+  }
+
+  const safeLimit = clampInt(limit, { min: 1, max: 100, fallback: 20 });
+  const safeOffset = clampInt(offset, { min: 0, max: 1000000, fallback: 0 });
+
+  // count
+  const countQ = await pool.query(
+    `SELECT COUNT(*)::int AS count FROM patients p WHERE ${where.join(' AND ')}`,
+    params
+  );
+  const total = countQ.rows[0]?.count || 0;
+
+  // list
+  params.push(safeLimit, safeOffset);
+  const listSql = `
     SELECT
       p.id,
       p.full_name AS "fullName",
@@ -26,16 +109,27 @@ async function listPatients({ tenantId, q }) {
       p.email,
       p.gender,
       p.date_of_birth AS "dateOfBirth",
+      p.national_id AS "nationalId",
+      p.address,
+      p.notes,
       p.is_active AS "isActive",
       p.created_at AS "createdAt"
     FROM patients p
-    WHERE ${where}
+    WHERE ${where.join(' AND ')}
     ORDER BY p.created_at DESC
-    LIMIT 100
+    LIMIT $${i} OFFSET $${i + 1}
   `;
 
-  const { rows } = await pool.query(sql, params);
-  return rows;
+  const { rows } = await pool.query(listSql, params);
+
+  return {
+    items: rows,
+    meta: {
+      total,
+      limit: safeLimit,
+      offset: safeOffset,
+    },
+  };
 }
 
 async function createPatient(tenantId, data) {
@@ -96,7 +190,6 @@ async function createPatient(tenantId, data) {
 
     return q.rows[0];
   } catch (err) {
-    // Unique violation
     if (err && err.code === '23505') {
       throw new HttpError(409, 'Patient already exists');
     }
@@ -137,9 +230,9 @@ async function updatePatient(tenantId, patientId, data) {
 
   const fields = [];
   const values = [];
-  let i = 1;
+  let idx = 1;
 
-  for (const [key, val] of Object.entries(data)) {
+  for (const [key, value] of Object.entries(data)) {
     let col;
     switch (key) {
       case 'fullName':
@@ -154,8 +247,9 @@ async function updatePatient(tenantId, patientId, data) {
       default:
         col = key;
     }
-    fields.push(`${col} = $${i++}`);
-    values.push(val);
+
+    fields.push(`${col} = $${idx++}`);
+    values.push(value);
   }
 
   if (fields.length === 0) throw new HttpError(400, 'No fields to update');
@@ -166,7 +260,7 @@ async function updatePatient(tenantId, patientId, data) {
     `
     UPDATE patients
     SET ${fields.join(', ')}
-    WHERE id = $${i++} AND tenant_id = $${i}
+    WHERE id = $${idx++} AND tenant_id = $${idx}
     RETURNING
       id,
       full_name AS "fullName",
@@ -187,10 +281,6 @@ async function updatePatient(tenantId, patientId, data) {
   return q.rows[0];
 }
 
-/**
- * ✅ مهم جداً:
- * لازم يكون export بهذا الشكل، وإلا سيظهر عندك createPatient is not a function
- */
 module.exports = {
   listPatients,
   createPatient,
