@@ -1,64 +1,46 @@
-// src/modules/roles/roles.service.js
-const pool = require('../../db/pool');
-const { getDefaultRolesForTenantType } = require('./roles.catalog');
+// src/server.js
+require('dotenv').config();
 
-async function getTenantType(tenantId, db = pool) {
-  const q = await db.query(
-    `
-    SELECT type
-    FROM tenants
-    WHERE id = $1
-    LIMIT 1
-    `,
-    [tenantId]
-  );
+const express = require('express');
+const cors = require('cors');
+const helmet = require('helmet');
+const morgan = require('morgan');
 
-  if (q.rowCount === 0) {
-    const err = new Error('Tenant not found');
-    err.status = 404;
-    throw err;
-  }
+const authRoutes = require('./modules/auth/auth.routes');
+const meRoutes = require('./routes/me.routes');
+const rolesRoutes = require('./modules/roles/roles.routes');
+const facilityRoutes = require('./modules/facility/facility.routes');
 
-  return q.rows[0].type;
-}
+const app = express();
 
-async function ensureDefaultRolesForTenant(tenantId, db = pool) {
-  const type = await getTenantType(tenantId, db);
-  const roleNames = getDefaultRolesForTenantType(type);
+app.use(helmet());
+app.use(cors());
+app.use(express.json({ limit: '1mb' }));
+app.use(morgan('dev'));
 
-  // idempotent insert (unique tenant_id, name already exists)
-  for (const name of roleNames) {
-    await db.query(
-      `
-      INSERT INTO roles (tenant_id, name, created_at)
-      VALUES ($1, $2, now())
-      ON CONFLICT (tenant_id, name) DO NOTHING
-      `,
-      [tenantId, name]
-    );
-  }
+app.get('/health', (_req, res) => res.json({ ok: true }));
 
-  return roleNames;
-}
+app.use('/api/auth', authRoutes);
+app.use('/api', meRoutes);
+app.use('/api/roles', rolesRoutes);
+app.use('/api/facility', facilityRoutes);
 
-async function listRoles(tenantId) {
-  // ensure roles exist first (safe to call many times)
-  await ensureDefaultRolesForTenant(tenantId);
+// Error handler (آخر شيء)
+app.use((err, _req, res, _next) => {
+  const status = err.status || 500;
+  res.status(status).json({
+    message: err.message || 'Server error',
+    ...(process.env.NODE_ENV !== 'production' && err.details ? { details: err.details } : {}),
+  });
+});
 
-  const rolesQ = await pool.query(
-    `
-    SELECT id, name
-    FROM roles
-    WHERE tenant_id = $1
-    ORDER BY name
-    `,
-    [tenantId]
-  );
+process.on('unhandledRejection', (reason) => {
+  console.error('❌ Unhandled Rejection:', reason);
+});
 
-  return rolesQ.rows;
-}
+process.on('uncaughtException', (err) => {
+  console.error('❌ Uncaught Exception:', err);
+});
 
-module.exports = {
-  listRoles,
-  ensureDefaultRolesForTenant,
-};
+const port = process.env.PORT || 8080;
+app.listen(port, () => console.log(`API listening on :${port}`));
