@@ -10,10 +10,13 @@ import '../../features/orders/presentation/pages/create_order_page.dart';
 import '../../workspaces/nurse/nurse_tasks_page.dart';
 import '../../core/settings/v2_settings_page.dart';
 
-// Admin pages
+// Admin staff pages
 import '../../features/admin_staff/presentation/pages/admin_users_page.dart';
 import '../../features/admin_staff/presentation/pages/admin_create_user_page.dart';
-import '../../features/admin_staff/presentation/pages/admin_create_department_page.dart'; // ✅ NEW
+
+// ✅ Departments pages (new)
+import '../../features/admin_staff/presentation/pages/admin_departments_page.dart';
+import '../../features/admin_staff/presentation/pages/admin_create_department_page.dart';
 
 class V2AppDrawer extends StatelessWidget {
   const V2AppDrawer({super.key});
@@ -27,12 +30,19 @@ class V2AppDrawer extends StatelessWidget {
     final isDoctor = RoleUtils.hasRole(user, 'DOCTOR');
     final isNurse = RoleUtils.hasRole(user, 'NURSE');
 
-    final userName = user?['fullName']?.toString() ?? '—';
-    final roleLabel = _roleLabel(
-      isAdmin: isAdmin,
-      isDoctor: isDoctor,
-      isNurse: isNurse,
-    );
+    final fullName = user?['fullName']?.toString().trim();
+    final userName = (fullName == null || fullName.isEmpty) ? '—' : fullName;
+
+    final rolesRaw = (user?['roles'] is List)
+        ? (user?['roles'] as List)
+        : const [];
+    final rolesText = rolesRaw
+        .map((e) => e?.toString() ?? '')
+        .where((e) => e.trim().isNotEmpty)
+        .map((e) => e.toUpperCase())
+        .toList();
+
+    final roleLabel = _roleLabel(rolesText);
 
     return Drawer(
       child: SafeArea(
@@ -42,93 +52,74 @@ class V2AppDrawer extends StatelessWidget {
 
             Expanded(
               child: ListView(
-                padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+                padding: const EdgeInsets.symmetric(vertical: 10),
                 children: [
                   if (isDoctor) ...[
-                    _groupCard(
-                      title: 'الطبيب',
-                      children: [
-                        _item(
-                          context,
-                          icon: Icons.dashboard_rounded,
-                          title: 'لوحة الأوامر',
-                          subtitle: 'عرض ومتابعة أوامر الطبيب',
-                          onTap: () =>
-                              _go(context, const OrdersDashboardPage()),
-                        ),
-                        _item(
-                          context,
-                          icon: Icons.add_circle_outline_rounded,
-                          title: 'إنشاء أمر',
-                          subtitle: 'إنشاء أمر جديد بسرعة',
-                          onTap: () => _go(context, const CreateOrderPage()),
-                        ),
-                      ],
+                    _sectionTitle('الطبيب'),
+                    _item(
+                      context,
+                      icon: Icons.dashboard_rounded,
+                      title: 'لوحة الأوامر',
+                      onTap: () => _go(context, const OrdersDashboardPage()),
                     ),
-                    const SizedBox(height: 10),
+                    _item(
+                      context,
+                      icon: Icons.add_circle_outline_rounded,
+                      title: 'إنشاء أمر',
+                      onTap: () => _go(context, const CreateOrderPage()),
+                    ),
+                    _softDivider(),
                   ],
 
                   if (isNurse) ...[
-                    _groupCard(
-                      title: 'التمريض',
-                      children: [
-                        _item(
-                          context,
-                          icon: Icons.checklist_rounded,
-                          title: 'مهامي',
-                          subtitle: 'قائمة مهامك الحالية',
-                          onTap: () => _go(context, const NurseTasksPage()),
-                        ),
-                      ],
+                    _sectionTitle('التمريض'),
+                    _item(
+                      context,
+                      icon: Icons.checklist_rounded,
+                      title: 'مهامي',
+                      onTap: () => _go(context, const NurseTasksPage()),
                     ),
-                    const SizedBox(height: 10),
+                    _softDivider(),
                   ],
 
                   if (isAdmin) ...[
-                    _groupCard(
-                      title: 'الإدارة',
-                      children: [
-                        _item(
-                          context,
-                          icon: Icons.groups_2_rounded,
-                          title: 'الموظفون',
-                          subtitle: 'إدارة المستخدمين والصلاحيات',
-                          onTap: () => _go(context, const AdminUsersPage()),
-                        ),
-                        _item(
-                          context,
-                          icon: Icons.person_add_alt_1_rounded,
-                          title: 'إضافة موظف',
-                          subtitle: 'إنشاء حساب موظف جديد',
-                          onTap: () =>
-                              _go(context, const AdminCreateUserPage()),
-                        ),
-
-                        // ✅ NEW: Create Department
-                        _item(
-                          context,
-                          icon: Icons.account_tree_rounded,
-                          title: 'إنشاء قسم',
-                          subtitle: 'إضافة قسم جديد للمنشأة',
-                          onTap: () =>
-                              _go(context, const AdminCreateDepartmentPage()),
-                        ),
-                      ],
+                    _sectionTitle('الإدارة'),
+                    _item(
+                      context,
+                      icon: Icons.groups_2_rounded,
+                      title: 'الموظفون',
+                      onTap: () => _go(context, const AdminUsersPage()),
                     ),
-                    const SizedBox(height: 10),
+                    _item(
+                      context,
+                      icon: Icons.person_add_alt_1_rounded,
+                      title: 'إضافة موظف',
+                      onTap: () => _go(context, const AdminCreateUserPage()),
+                    ),
+
+                    // ✅ New: Departments
+                    _item(
+                      context,
+                      icon: Icons.apartment_rounded,
+                      title: 'الأقسام',
+                      onTap: () => _go(context, const AdminDepartmentsPage()),
+                    ),
+                    _item(
+                      context,
+                      icon: Icons.add_business_rounded,
+                      title: 'إضافة قسم',
+                      onTap: () =>
+                          _go(context, const AdminCreateDepartmentPage()),
+                    ),
+                    _softDivider(),
                   ],
 
-                  _groupCard(
-                    title: 'التطبيق',
-                    children: [
-                      _item(
-                        context,
-                        icon: Icons.settings_rounded,
-                        title: 'الإعدادات',
-                        subtitle: 'اللغة، المظهر، وإعدادات الحساب',
-                        onTap: () => _go(context, const V2SettingsPage()),
-                      ),
-                    ],
+                  _sectionTitle('التطبيق'),
+                  _item(
+                    context,
+                    icon: Icons.settings_rounded,
+                    title: 'الإعدادات',
+                    onTap: () => _go(context, const V2SettingsPage()),
                   ),
                 ],
               ),
@@ -139,15 +130,14 @@ class V2AppDrawer extends StatelessWidget {
               child: FilledButton.icon(
                 onPressed: () async {
                   // ✅ logout should work here
+                  // keep behavior minimal and safe
+                  Navigator.pop(context); // close drawer first
                   await context.read<AuthStore>().logout();
                 },
                 icon: const Icon(Icons.logout_rounded),
                 label: const Text('تسجيل خروج'),
                 style: FilledButton.styleFrom(
-                  minimumSize: const Size.fromHeight(50),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
+                  minimumSize: const Size.fromHeight(48),
                 ),
               ),
             ),
@@ -157,83 +147,46 @@ class V2AppDrawer extends StatelessWidget {
     );
   }
 
-  // ---------- UI helpers (no logic changes) ----------
-
-  static String _roleLabel({
-    required bool isAdmin,
-    required bool isDoctor,
-    required bool isNurse,
-  }) {
-    // purely display text; it does not affect any permissions.
-    if (isAdmin) return 'مدير';
-    if (isDoctor) return 'طبيب';
-    if (isNurse) return 'تمريض';
-    return 'مستخدم';
-  }
-
-  Widget _groupCard({required String title, required List<Widget> children}) {
-    return Card(
-      elevation: 0,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(8, 10, 8, 10),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(10, 0, 10, 6),
-              child: Text(
-                title,
-                style: const TextStyle(fontWeight: FontWeight.w900),
-              ),
-            ),
-            ..._withDividers(children),
-          ],
-        ),
-      ),
-    );
-  }
-
-  List<Widget> _withDividers(List<Widget> items) {
-    final out = <Widget>[];
-    for (var i = 0; i < items.length; i++) {
-      out.add(items[i]);
-      if (i != items.length - 1) {
-        out.add(const Divider(height: 10));
-      }
-    }
-    return out;
+  static String _roleLabel(List<String> rolesUpper) {
+    if (rolesUpper.contains('ADMIN')) return 'Admin';
+    if (rolesUpper.contains('DOCTOR')) return 'Doctor';
+    if (rolesUpper.contains('NURSE')) return 'Nurse';
+    if (rolesUpper.contains('LAB')) return 'Lab';
+    if (rolesUpper.contains('PHARMACY')) return 'Pharmacy';
+    if (rolesUpper.contains('RECEPTION')) return 'Reception';
+    return '';
   }
 
   Widget _item(
     BuildContext context, {
     required IconData icon,
     required String title,
-    String? subtitle,
     required VoidCallback onTap,
   }) {
     final theme = Theme.of(context);
-
     return ListTile(
-      dense: false,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      leading: Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          color: theme.colorScheme.primary.withAlpha(22),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Icon(icon, color: theme.colorScheme.primary),
-      ),
-      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
-      subtitle: subtitle == null
-          ? null
-          : Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis),
-      trailing: const Icon(Icons.chevron_right_rounded),
+      leading: Icon(icon, color: theme.colorScheme.onSurface.withAlpha(220)),
+      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
       onTap: onTap,
+      dense: true,
+      visualDensity: const VisualDensity(horizontal: 0, vertical: -1),
     );
   }
+
+  Widget _sectionTitle(String t) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
+      child: Text(
+        t,
+        style: const TextStyle(fontWeight: FontWeight.w900, letterSpacing: .2),
+      ),
+    );
+  }
+
+  Widget _softDivider() => const Padding(
+    padding: EdgeInsets.symmetric(horizontal: 16),
+    child: Divider(height: 18),
+  );
 
   void _go(BuildContext context, Widget page) {
     Navigator.pop(context);
@@ -252,25 +205,18 @@ class _Header extends StatelessWidget {
     final theme = Theme.of(context);
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topRight,
-          end: Alignment.bottomLeft,
-          colors: [
-            theme.colorScheme.primary.withAlpha(26),
-            theme.colorScheme.surface,
-          ],
-        ),
+        color: theme.colorScheme.surface,
         border: Border(
-          bottom: BorderSide(color: theme.dividerColor.withAlpha(45)),
+          bottom: BorderSide(color: theme.dividerColor.withAlpha(40)),
         ),
       ),
       child: Row(
         children: [
           CircleAvatar(
-            radius: 24,
-            backgroundColor: theme.colorScheme.primary.withAlpha(28),
+            radius: 22,
+            backgroundColor: theme.colorScheme.primary.withAlpha(18),
             child: Icon(
               Icons.local_hospital_rounded,
               color: theme.colorScheme.primary,
@@ -289,31 +235,16 @@ class _Header extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-                const SizedBox(height: 6),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 5,
-                    ),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.primary.withAlpha(20),
-                      borderRadius: BorderRadius.circular(999),
-                      border: Border.all(
-                        color: theme.colorScheme.primary.withAlpha(40),
-                      ),
-                    ),
-                    child: Text(
-                      roleLabel,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w800,
-                        color: theme.colorScheme.primary,
-                        fontSize: 12,
-                      ),
+                if (roleLabel.trim().isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    roleLabel,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.textTheme.bodySmall?.color?.withAlpha(170),
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
-                ),
+                ],
               ],
             ),
           ),
