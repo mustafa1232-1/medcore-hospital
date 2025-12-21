@@ -2,6 +2,14 @@
 const usersService = require('./users.service');
 const passwordService = require('../auth/password.service'); // ✅ reuse the same service
 
+function actor(req) {
+  return {
+    userId: req.user?.sub,
+    tenantId: req.user?.tenantId,
+    roles: Array.isArray(req.user?.roles) ? req.user.roles : [],
+  };
+}
+
 async function listUsers(req, res, next) {
   try {
     const tenantId = req.user?.tenantId;
@@ -77,9 +85,35 @@ async function resetPassword(req, res, next) {
   }
 }
 
+// ✅ NEW: set/transfer/unassign department (ADMIN or DOCTOR with rules)
+async function setDepartment(req, res, next) {
+  try {
+    const tenantId = req.user?.tenantId;
+    const targetUserId = req.params.id;
+
+    if (!tenantId) {
+      return res.status(401).json({ message: 'Unauthorized: invalid payload' });
+    }
+
+    const result = await usersService.setUserDepartment({
+      actor: actor(req),
+      tenantId,
+      targetUserId,
+      departmentId: req.body.departmentId, // uuid | null
+    });
+
+    return res.json({ ok: true, user: result });
+  } catch (err) {
+    return next(err);
+  }
+}
+
 module.exports = {
   listUsers,
   createUser,
   setActive,
-  resetPassword, // ✅ export
+  resetPassword,
+
+  // ✅ export
+  setDepartment,
 };

@@ -11,8 +11,7 @@ const createUserSchema = z
     password: z.string().min(6),
     roles: z.array(z.string().min(2)).min(1),
 
-    // ✅ NEW
-    // إلزامي للطبيب/الممرض فقط (والباقي اختياري)
+    // ✅ NEW (existing in your file)
     departmentId: z.string().uuid().optional().nullable(),
   })
   .refine((d) => d.email || d.phone, {
@@ -36,7 +35,15 @@ const setActiveSchema = z.object({
   isActive: z.boolean(),
 });
 
+// ✅ NEW: assign/transfer/unassign department
+const setUserDepartmentSchema = z.object({
+  departmentId: z.string().uuid().nullable(), // null => unassign
+});
+
 module.exports = {
   createUserSchema,
   setActiveSchema,
+
+  // ✅ new
+  setUserDepartmentSchema,
 };

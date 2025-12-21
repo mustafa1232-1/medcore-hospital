@@ -2,6 +2,7 @@
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const pool = require('../../db/pool');
+const { HttpError } = require('../../utils/httpError');
 
 function slugify(input) {
   const s = String(input || '')
@@ -276,8 +277,147 @@ async function setUserActive({ tenantId, userId, isActive }) {
   return { ...user, roles: rolesQ.rows.map((r) => r.name) };
 }
 
+// =========================
+// ✅ NEW: assign/transfer/unassign department
+// =========================
+function normalizeRoles(arr) {
+  return (Array.isArray(arr) ? arr : [])
+    .map((r) => (typeof r === 'string' ? r : r?.name))
+    .filter(Boolean)
+    .map((x) => String(x).toUpperCase().trim());
+}
+
+async function getUserWithRoles({ tenantId, userId }) {
+  const uQ = await pool.query(
+    `
+    SELECT
+      u.id,
+      u.tenant_id AS "tenantId",
+      u.full_name AS "fullName",
+      u.staff_code AS "staffCode",
+      u.email,
+      u.phone,
+      u.is_active AS "isActive",
+      u.department_id AS "departmentId"
+    FROM users u
+    WHERE u.tenant_id = $1 AND u.id = $2
+    LIMIT 1
+    `,
+    [tenantId, userId]
+  );
+  if (uQ.rowCount === 0) throw new HttpError(404, 'User not found');
+
+  const rolesQ = await pool.query(
+    `
+    SELECT r.name
+    FROM user_roles ur
+    JOIN roles r ON r.id = ur.role_id
+    WHERE ur.user_id = $1
+      AND r.tenant_id = $2
+    ORDER BY r.name
+    `,
+    [userId, tenantId]
+  );
+
+  return { ...uQ.rows[0], roles: rolesQ.rows.map((x) => x.name) };
+}
+
+async function ensureDepartmentBelongsToTenant({ tenantId, departmentId }) {
+  const q = await pool.query(
+    `SELECT 1 FROM departments WHERE tenant_id = $1 AND id = $2 AND is_active = true LIMIT 1`,
+    [tenantId, departmentId]
+  );
+  if (q.rowCount === 0) throw new HttpError(400, 'Invalid departmentId');
+}
+
+/**
+ * actor = { userId, tenantId, roles }
+ * - ADMIN: can assign anyone
+ * - DOCTOR: can assign NURSE only, cannot change self, cannot change doctors
+ */
+async function setUserDepartment({ actor, tenantId, targetUserId, departmentId }) {
+  const actorUserId = actor?.userId;
+  const actorTenantId = actor?.tenantId;
+  if (!actorUserId || !actorTenantId) throw new HttpError(401, 'Unauthorized');
+  if (actorTenantId !== tenantId) throw new HttpError(401, 'Unauthorized');
+
+  const actorRoles = normalizeRoles(actor?.roles);
+  const isAdmin = actorRoles.includes('ADMIN');
+  const isDoctor = actorRoles.includes('DOCTOR');
+
+  if (!isAdmin && !isDoctor) throw new HttpError(403, 'Forbidden');
+
+  if (isDoctor && String(actorUserId) === String(targetUserId)) {
+    throw new HttpError(403, 'Doctors cannot transfer themselves');
+  }
+
+  const target = await getUserWithRoles({ tenantId, userId: targetUserId });
+  if (!target.isActive) throw new HttpError(403, 'Target user is inactive');
+
+  const targetRoles = normalizeRoles(target.roles);
+
+  if (isDoctor) {
+    const isTargetNurse = targetRoles.includes('NURSE');
+    if (!isTargetNurse) throw new HttpError(403, 'Doctor can manage NURSE only');
+  }
+
+  if (departmentId !== null) {
+    await ensureDepartmentBelongsToTenant({ tenantId, departmentId });
+  }
+
+  const { rows, rowCount } = await pool.query(
+    `
+    UPDATE users
+    SET department_id = $3
+    WHERE tenant_id = $1 AND id = $2
+    RETURNING
+      id,
+      staff_code AS "staffCode",
+      tenant_id AS "tenantId",
+      full_name AS "fullName",
+      email,
+      phone,
+      is_active AS "isActive",
+      created_at AS "createdAt",
+      department_id AS "departmentId"
+    `,
+    [tenantId, targetUserId, departmentId]
+  );
+
+  if (rowCount === 0) throw new HttpError(404, 'User not found');
+
+  const updated = rows[0];
+
+  let depName = null;
+  let depCode = null;
+
+  if (departmentId) {
+    const depInfo = await pool.query(
+      `
+      SELECT d.name AS "departmentName", d.code AS "departmentCode"
+      FROM departments d
+      WHERE d.tenant_id = $1 AND d.id = $2
+      LIMIT 1
+      `,
+      [tenantId, departmentId]
+    );
+    depName = depInfo.rows[0]?.departmentName || null;
+    depCode = depInfo.rows[0]?.departmentCode || null;
+  }
+
+  return {
+    ...updated,
+    departmentName: depName,
+    departmentCode: depCode,
+    roles: targetRoles,
+  };
+}
+
 module.exports = {
   listUsers,
   createUser,
   setUserActive,
+
+  // ✅ new
+  setUserDepartment,
 };
