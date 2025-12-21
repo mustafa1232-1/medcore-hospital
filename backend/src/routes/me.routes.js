@@ -17,14 +17,17 @@ router.get('/me', requireAuth, async (req, res, next) => {
     const q = await pool.query(
       `
       SELECT
-        id,
-        tenant_id AS "tenantId",
-        full_name AS "fullName",
-        email,
-        phone,
-        is_active AS "isActive"
-      FROM users
-      WHERE id = $1 AND tenant_id = $2
+        u.id,
+        u.tenant_id AS "tenantId",
+        t.code      AS "tenantCode",
+        u.staff_code AS "staffCode",
+        u.full_name AS "fullName",
+        u.email,
+        u.phone,
+        u.is_active AS "isActive"
+      FROM users u
+      JOIN tenants t ON t.id = u.tenant_id
+      WHERE u.id = $1 AND u.tenant_id = $2
       LIMIT 1
       `,
       [userId, tenantId]
@@ -39,8 +42,10 @@ router.get('/me', requireAuth, async (req, res, next) => {
     return res.json({
       ok: true,
       user: {
-        id: u.id,
-        tenantId: u.tenantId,
+        id: u.id, // internal UUID (keep for backend ops)
+        tenantId: u.tenantId, // internal UUID (keep)
+        tenantCode: u.tenantCode, // ✅ UI-friendly facility code
+        staffCode: u.staffCode, // ✅ UI-friendly staff code
         fullName: u.fullName,
         email: u.email,
         phone: u.phone,

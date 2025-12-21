@@ -1,10 +1,48 @@
 // src/modules/users/users.service.js
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const pool = require('../../db/pool');
 
+function slugify(input) {
+  const s = String(input || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-+|-+$)/g, '');
+  return s || 'staff';
+}
+
+function shortSuffix4() {
+  return crypto.randomBytes(2).toString('hex'); // 4 hex chars
+}
+
+async function getTenantCodeBase(client, tenantId) {
+  const q = await client.query(`SELECT code FROM tenants WHERE id = $1 LIMIT 1`, [tenantId]);
+  const code = q.rows[0]?.code || 'facility';
+  const base = String(code).split('-')[0] || 'facility';
+  return base;
+}
+
+async function generateUniqueStaffCode(client, tenantId, fullName) {
+  const nameBase0 = slugify(fullName);
+  const nameBase = nameBase0.length > 14 ? nameBase0.slice(0, 14) : nameBase0;
+
+  const tenantBase0 = await getTenantCodeBase(client, tenantId);
+  const tenantBase = tenantBase0.length > 10 ? tenantBase0.slice(0, 10) : tenantBase0;
+
+  for (let i = 0; i < 10; i++) {
+    const staffCode = `${nameBase}-${tenantBase}-${shortSuffix4()}`;
+    const chk = await client.query(
+      `SELECT 1 FROM users WHERE tenant_id = $1 AND staff_code = $2 LIMIT 1`,
+      [tenantId, staffCode]
+    );
+    if (chk.rowCount === 0) return staffCode;
+  }
+
+  throw new Error('Failed to generate unique staff code');
+}
+
 async function ensureRolesExist(tenantId, roleNames) {
-  // Insert missing roles (idempotent)
-  // roles table has UNIQUE (tenant_id, name)
   for (const name of roleNames) {
     await pool.query(
       `
@@ -16,7 +54,6 @@ async function ensureRolesExist(tenantId, roleNames) {
     );
   }
 
-  // Fetch role ids
   const { rows } = await pool.query(
     `
     SELECT id, name
@@ -26,8 +63,8 @@ async function ensureRolesExist(tenantId, roleNames) {
     [tenantId, roleNames]
   );
 
-  const map = new Map(rows.map(r => [r.name, r.id]));
-  return roleNames.map(n => map.get(n)).filter(Boolean);
+  const map = new Map(rows.map((r) => [r.name, r.id]));
+  return roleNames.map((n) => map.get(n)).filter(Boolean);
 }
 
 async function listUsers({ tenantId, q, active, limit = 50, offset = 0 }) {
@@ -42,7 +79,12 @@ async function listUsers({ tenantId, q, active, limit = 50, offset = 0 }) {
   if (q) {
     params.push(`%${q}%`);
     const p = `$${params.length}`;
-    where += ` AND (u.full_name ILIKE ${p} OR u.email ILIKE ${p} OR u.phone ILIKE ${p})`;
+    where += ` AND (
+      u.full_name ILIKE ${p}
+      OR u.email ILIKE ${p}
+      OR u.phone ILIKE ${p}
+      OR u.staff_code ILIKE ${p}
+    )`;
   }
 
   params.push(limit, offset);
@@ -51,6 +93,7 @@ async function listUsers({ tenantId, q, active, limit = 50, offset = 0 }) {
     `
     SELECT
       u.id,
+      u.staff_code AS "staffCode",
       u.tenant_id AS "tenantId",
       u.full_name AS "fullName",
       u.email,
@@ -65,8 +108,7 @@ async function listUsers({ tenantId, q, active, limit = 50, offset = 0 }) {
     params
   );
 
-  // Roles for returned users (one query)
-  const ids = usersQ.rows.map(u => u.id);
+  const ids = usersQ.rows.map((u) => u.id);
   let rolesMap = new Map();
 
   if (ids.length) {
@@ -89,66 +131,77 @@ async function listUsers({ tenantId, q, active, limit = 50, offset = 0 }) {
     }
   }
 
-  const users = usersQ.rows.map(u => ({
+  return usersQ.rows.map((u) => ({
     ...u,
     roles: rolesMap.get(u.id) || [],
   }));
-
-  return users;
 }
 
 async function createUser({ tenantId, fullName, email, phone, password, roles }) {
-  const passwordHash = await bcrypt.hash(password, 10);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
 
-  // Create user
-  const { rows: uRows } = await pool.query(
-    `
-    INSERT INTO users (id, tenant_id, full_name, email, phone, password_hash, is_active, created_at)
-    VALUES (uuid_generate_v4(), $1, $2, $3, $4, $5, true, now())
-    RETURNING
-      id,
-      tenant_id AS "tenantId",
-      full_name AS "fullName",
-      email,
-      phone,
-      is_active AS "isActive",
-      created_at AS "createdAt"
-    `,
-    [tenantId, fullName, email || null, phone || null, passwordHash]
-  );
+    const passwordHash = await bcrypt.hash(password, 10);
+    const staffCode = await generateUniqueStaffCode(client, tenantId, fullName);
 
-  const user = uRows[0];
-
-  // Ensure roles exist in this tenant, then assign
-  const roleIds = await ensureRolesExist(tenantId, roles);
-
-  for (const roleId of roleIds) {
-    await pool.query(
+    const { rows: uRows } = await client.query(
       `
-      INSERT INTO user_roles (user_id, role_id)
-      VALUES ($1, $2)
-      ON CONFLICT DO NOTHING
+      INSERT INTO users (id, tenant_id, staff_code, full_name, email, phone, password_hash, is_active, created_at)
+      VALUES (uuid_generate_v4(), $1, $2, $3, $4, $5, $6, true, now())
+      RETURNING
+        id,
+        staff_code AS "staffCode",
+        tenant_id AS "tenantId",
+        full_name AS "fullName",
+        email,
+        phone,
+        is_active AS "isActive",
+        created_at AS "createdAt"
       `,
-      [user.id, roleId]
+      [tenantId, staffCode, fullName, email || null, phone || null, passwordHash]
     );
+
+    const user = uRows[0];
+
+    const roleIds = await ensureRolesExist(tenantId, roles);
+
+    for (const roleId of roleIds) {
+      await client.query(
+        `
+        INSERT INTO user_roles (user_id, role_id)
+        VALUES ($1, $2)
+        ON CONFLICT DO NOTHING
+        `,
+        [user.id, roleId]
+      );
+    }
+
+    const rolesQ = await client.query(
+      `
+      SELECT r.name
+      FROM user_roles ur
+      JOIN roles r ON r.id = ur.role_id
+      WHERE ur.user_id = $1
+      ORDER BY r.name
+      `,
+      [user.id]
+    );
+
+    await client.query('COMMIT');
+
+    return {
+      ...user,
+      roles: rolesQ.rows.map((r) => r.name),
+    };
+  } catch (e) {
+    try {
+      await client.query('ROLLBACK');
+    } catch {}
+    throw e;
+  } finally {
+    client.release();
   }
-
-  // Fetch roles by name to return
-  const rolesQ = await pool.query(
-    `
-    SELECT r.name
-    FROM user_roles ur
-    JOIN roles r ON r.id = ur.role_id
-    WHERE ur.user_id = $1
-    ORDER BY r.name
-    `,
-    [user.id]
-  );
-
-  return {
-    ...user,
-    roles: rolesQ.rows.map(r => r.name),
-  };
 }
 
 async function setUserActive({ tenantId, userId, isActive }) {
@@ -159,6 +212,7 @@ async function setUserActive({ tenantId, userId, isActive }) {
     WHERE id = $2 AND tenant_id = $3
     RETURNING
       id,
+      staff_code AS "staffCode",
       tenant_id AS "tenantId",
       full_name AS "fullName",
       email,
@@ -188,7 +242,7 @@ async function setUserActive({ tenantId, userId, isActive }) {
     [user.id]
   );
 
-  return { ...user, roles: rolesQ.rows.map(r => r.name) };
+  return { ...user, roles: rolesQ.rows.map((r) => r.name) };
 }
 
 module.exports = {

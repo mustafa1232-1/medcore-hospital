@@ -1,0 +1,136 @@
+{
+  "@@locale": "ar",
+
+  "appName": "CareSync",
+  "hospitalFirst": "Hospital First",
+
+  "nav_home": "الرئيسية",
+  "nav_staff": "الكادر",
+  "nav_account": "الحساب",
+
+  "login_title": "تسجيل الدخول",
+  "login_tenant": "كود المنشأة",
+  "login_tenant_hint": "الصق كود المنشأة أو المعرّف",
+  "login_email": "الإيميل",
+  "login_phone": "الهاتف",
+  "login_password": "كلمة المرور",
+  "login_button": "دخول",
+  "login_failed": "فشل تسجيل الدخول. تأكد من البيانات.",
+
+  "settings_title": "الإعدادات",
+
+  "settings_header_title": "تحكم كامل بالتجربة",
+  "settings_header_subtitle_normal": "اختر المظهر واللغة وسهولة الوصول",
+  "settings_header_subtitle_rgb": "RGB Pulse فعّال — واجهة نابضة وحيوية",
+
+  "settings_appearance": "المظهر",
+  "settings_language": "اللغة",
+  "settings_accessibility": "سهولة الوصول والأداء",
+  "settings_experience": "تجربة المستخدم",
+  "settings_about": "عن التطبيق",
+
+  "settings_themeMode": "الوضع",
+  "settings_themeMode_system": "نظام الجهاز",
+  "settings_themeMode_light": "لايت",
+  "settings_themeMode_dark": "دارك",
+
+  "settings_themeStyle": "ستايل الثيم",
+  "settings_themeStyle_classic": "Classic",
+  "settings_themeStyle_neon": "Neon",
+  "settings_themeStyle_rgbPulse": "RGB Pulse",
+
+  "settings_themeStyle_classic_desc": "Classic — رسمي وهادئ",
+  "settings_themeStyle_neon_desc": "Neon — حواف وإبرازات جذابة",
+  "settings_themeStyle_rgb_desc": "RGB Pulse — ثيم نابض ديناميكي",
+  "settings_themeStyle_rgb_hint": "يتوقف عند تفعيل تقليل الحركة",
+
+  "settings_accentSeed": "لون التطبيق الأساسي",
+  "settings_accentSeed_subtitle": "يؤثر على الأزرار والواجهات",
+  "settings_accentSeed_disabled_rgb": "غير متاح أثناء RGB Pulse",
+
+  "settings_appLanguage": "لغة التطبيق",
+  "settings_lang_system": "نظام الجهاز",
+  "settings_lang_ar": "العربية",
+  "settings_lang_en": "English",
+
+  "settings_reduceMotion": "تقليل الحركة (أفضل للأداء)",
+  "settings_reduceMotion_sub": "يقلل المؤثرات وRGB Pulse يصبح ثابتاً",
+
+  "settings_compactUi": "واجهة مدمجة",
+  "settings_compactUi_sub": "Padding أقل — مناسب للشاشات الصغيرة",
+
+  "settings_textSize": "حجم النص",
+  "settings_haptics": "اهتزاز خفيف للأزرار",
+  "settings_haptics_sub": "سنفعّله لاحقاً على الأزرار الحساسة",
+
+  "settings_note_locale": "ملاحظة: تغيير اللغة يتطلب أن تكون النصوص مربوطة بمفاتيح AppLocalizations (تجنّب النصوص الثابتة).",
+
+  "account_title": "الحساب",
+  "account_subtitle": "بياناتك وصلاحياتك",
+  "account_noData": "لا توجد بيانات",
+  "account_info": "معلومات",
+  "account_roles": "الصلاحيات",
+  "account_logout": "تسجيل خروج",
+
+  "staff_title": "الكادر والصلاحيات",
+  "staff_add": "إضافة",
+  "staff_search_hint": "بحث (اسم/إيميل/هاتف)",
+  "staff_status": "الحالة",
+  "staff_status_all": "الكل",
+  "staff_status_active": "نشط",
+  "staff_status_inactive": "غير نشط",
+  "staff_apply": "تطبيق",
+  "staff_noResults": "لا توجد نتائج",
+  "staff_unauthorized": "غير مصرح",
+  "staff_retry": "إعادة المحاولة",
+
+  "user_active": "نشط",
+  "user_inactive": "غير نشط",
+  "user_enable": "تفعيل",
+  "user_disable": "تعطيل",
+
+  "resetPassword_title": "إعادة تعيين كلمة المرور",
+  "resetPassword_user": "المستخدم: {fullName}",
+  "resetPassword_newPassword": "كلمة مرور جديدة",
+  "resetPassword_hint": "على الأقل 6 أحرف",
+  "resetPassword_cancel": "إلغاء",
+  "resetPassword_confirm": "تأكيد",
+  "resetPassword_short": "كلمة المرور يجب أن تكون 6 أحرف على الأقل",
+  "resetPassword_success": "تم تحديث كلمة المرور بنجاح",
+
+  "@resetPassword_user": {
+    "description": "Shows user name in reset password dialog",
+    "placeholders": {
+      "fullName": { "type": "String" }
+    }
+  },
+
+  "staff_manage_title": "الكادر والصلاحيات",
+  "staff_add_user": "إضافة مستخدم",
+  "staff_disable_user_q": "تعطيل المستخدم؟",
+  "staff_enable_user_q": "تفعيل المستخدم؟",
+  "staff_disable_user_desc": "سيتم منع المستخدم من تسجيل الدخول.",
+  "staff_enable_user_desc": "سيتم السماح للمستخدم بتسجيل الدخول.",
+
+  "common_cancel": "إلغاء",
+  "common_confirm": "تم النسخ",
+  "common_apply": "تطبيق",
+  "common_all": "الكل",
+  "common_active": "نشط",
+  "common_inactive": "غير نشط",
+  "common_retry": "إعادة المحاولة",
+  "common_search": "بحث",
+
+  "facility_code": "كود المنشأة",
+  "staff_id": "معرّف الموظف",
+
+  "create_user_title": "إنشاء مستخدم",
+  "create_user_section": "بيانات المستخدم",
+  "create_user_full_name": "الاسم الكامل",
+  "create_user_email": "البريد الإلكتروني",
+  "create_user_phone": "رقم الهاتف",
+  "create_user_password": "كلمة المرور",
+  "create_user_roles": "الأدوار",
+  "create_user_submit": "إنشاء",
+  "create_user_success": "تم إنشاء المستخدم بنجاح"
+}

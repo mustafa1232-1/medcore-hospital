@@ -1,0 +1,136 @@
+{
+  "@@locale": "en",
+
+  "appName": "CareSync",
+  "hospitalFirst": "Hospital First",
+
+  "nav_home": "Home",
+  "nav_staff": "Staff",
+  "nav_account": "Account",
+
+  "login_title": "Sign in",
+  "login_tenant": "Facility Code",
+  "login_tenant_hint": "Paste the facility code or identifier",
+  "login_email": "Email",
+  "login_phone": "Phone",
+  "login_password": "Password",
+  "login_button": "Login",
+  "login_failed": "Login failed. Please check your details.",
+
+  "settings_title": "Settings",
+
+  "settings_header_title": "Full Control",
+  "settings_header_subtitle_normal": "Choose theme, language, and accessibility options",
+  "settings_header_subtitle_rgb": "RGB Pulse is active — vivid dynamic experience",
+
+  "settings_appearance": "Appearance",
+  "settings_language": "Language",
+  "settings_accessibility": "Accessibility & Performance",
+  "settings_experience": "Experience",
+  "settings_about": "About",
+
+  "settings_themeMode": "Theme mode",
+  "settings_themeMode_system": "System",
+  "settings_themeMode_light": "Light",
+  "settings_themeMode_dark": "Dark",
+
+  "settings_themeStyle": "Theme style",
+  "settings_themeStyle_classic": "Classic",
+  "settings_themeStyle_neon": "Neon",
+  "settings_themeStyle_rgbPulse": "RGB Pulse",
+
+  "settings_themeStyle_classic_desc": "Classic — calm and professional",
+  "settings_themeStyle_neon_desc": "Neon — outlined and punchy",
+  "settings_themeStyle_rgb_desc": "RGB Pulse — dynamic style",
+  "settings_themeStyle_rgb_hint": "Disables animation when Reduce Motion is enabled",
+
+  "settings_accentSeed": "Primary accent",
+  "settings_accentSeed_subtitle": "Affects buttons and UI highlights",
+  "settings_accentSeed_disabled_rgb": "Not available during RGB Pulse",
+
+  "settings_appLanguage": "App language",
+  "settings_lang_system": "Device language",
+  "settings_lang_ar": "Arabic",
+  "settings_lang_en": "English",
+
+  "settings_reduceMotion": "Reduce motion (better performance)",
+  "settings_reduceMotion_sub": "Reduces animations; RGB Pulse becomes static",
+
+  "settings_compactUi": "Compact UI",
+  "settings_compactUi_sub": "Less padding for smaller screens",
+
+  "settings_textSize": "Text size",
+  "settings_haptics": "Light haptics",
+  "settings_haptics_sub": "Enable subtle vibration on key actions",
+
+  "settings_note_locale": "Note: Language changes require UI strings to use AppLocalizations keys (avoid hardcoded texts).",
+
+  "account_title": "Account",
+  "account_subtitle": "Your profile and permissions",
+  "account_noData": "No user data",
+  "account_info": "Info",
+  "account_roles": "Roles",
+  "account_logout": "Logout",
+
+  "staff_title": "Staff & Permissions",
+  "staff_add": "Add",
+  "staff_search_hint": "Search (name/email/phone)",
+  "staff_status": "Status",
+  "staff_status_all": "All",
+  "staff_status_active": "Active",
+  "staff_status_inactive": "Inactive",
+  "staff_apply": "Apply",
+  "staff_noResults": "No results",
+  "staff_unauthorized": "Unauthorized",
+  "staff_retry": "Retry",
+
+  "user_active": "Active",
+  "user_inactive": "Inactive",
+  "user_enable": "Enable",
+  "user_disable": "Disable",
+
+  "resetPassword_title": "Reset password",
+  "resetPassword_user": "User: {fullName}",
+  "resetPassword_newPassword": "New password",
+  "resetPassword_hint": "At least 6 characters",
+  "resetPassword_cancel": "Cancel",
+  "resetPassword_confirm": "Confirm",
+  "resetPassword_short": "Password must be at least 6 characters",
+  "resetPassword_success": "Password updated successfully",
+
+  "@resetPassword_user": {
+    "description": "Shows user name in reset password dialog",
+    "placeholders": {
+      "fullName": { "type": "String" }
+    }
+  },
+
+  "staff_manage_title": "Staff & Permissions",
+  "staff_add_user": "Add user",
+  "staff_disable_user_q": "Disable user?",
+  "staff_enable_user_q": "Enable user?",
+  "staff_disable_user_desc": "User will be blocked from login.",
+  "staff_enable_user_desc": "User will be allowed to login.",
+
+  "common_cancel": "Cancel",
+  "common_confirm": "Copied",
+  "common_apply": "Apply",
+  "common_all": "All",
+  "common_active": "Active",
+  "common_inactive": "Inactive",
+  "common_retry": "Retry",
+  "common_search": "Search",
+
+  "facility_code": "Facility Code",
+  "staff_id": "Staff ID",
+
+  "create_user_title": "Create user",
+  "create_user_section": "User details",
+  "create_user_full_name": "Full name",
+  "create_user_email": "Email",
+  "create_user_phone": "Phone",
+  "create_user_password": "Password",
+  "create_user_roles": "Roles",
+  "create_user_submit": "Create",
+  "create_user_success": "User created successfully"
+}

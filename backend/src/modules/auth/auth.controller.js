@@ -16,7 +16,6 @@ function slugify(input) {
 }
 
 function shortSuffix4() {
-  // 4 chars hex
   return crypto.randomBytes(2).toString('hex');
 }
 
@@ -24,13 +23,39 @@ async function generateUniqueTenantCode(client, name) {
   const base0 = slugify(name);
   const base = base0.length > 16 ? base0.slice(0, 16) : base0;
 
-  // retry few times on collision
   for (let i = 0; i < 10; i++) {
     const code = `${base}-${shortSuffix4()}`;
     const chk = await client.query(`SELECT 1 FROM tenants WHERE code = $1 LIMIT 1`, [code]);
     if (chk.rowCount === 0) return code;
   }
   throw new Error('Failed to generate unique tenant code');
+}
+
+function staffSlug(input) {
+  const s = String(input || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-+|-+$)/g, '');
+  return s || 'staff';
+}
+
+async function generateUniqueStaffCode(client, tenantId, tenantCode, fullName) {
+  const nameBase0 = staffSlug(fullName);
+  const nameBase = nameBase0.length > 14 ? nameBase0.slice(0, 14) : nameBase0;
+
+  const tenantBase0 = String(tenantCode || 'facility').split('-')[0] || 'facility';
+  const tenantBase = tenantBase0.length > 10 ? tenantBase0.slice(0, 10) : tenantBase0;
+
+  for (let i = 0; i < 10; i++) {
+    const staffCode = `${nameBase}-${tenantBase}-${shortSuffix4()}`;
+    const chk = await client.query(
+      `SELECT 1 FROM users WHERE tenant_id = $1 AND staff_code = $2 LIMIT 1`,
+      [tenantId, staffCode]
+    );
+    if (chk.rowCount === 0) return staffCode;
+  }
+  throw new Error('Failed to generate unique staff code');
 }
 
 module.exports = {
@@ -50,10 +75,8 @@ module.exports = {
 
       await client.query('BEGIN');
 
-      // ✅ NEW: generate short tenant code (does not change old logic)
       const code = await generateUniqueTenantCode(client, name);
 
-      // 1) Create tenant
       const tenantQ = await client.query(
         `
         INSERT INTO tenants (id, name, type, phone, email, code, created_at)
@@ -72,26 +95,28 @@ module.exports = {
 
       const tenant = tenantQ.rows[0];
 
-      // 2) Create admin user
       const passwordHash = await bcrypt.hash(adminPassword, 10);
+
+      // ✅ NEW: staff_code for admin
+      const staffCode = await generateUniqueStaffCode(client, tenant.id, tenant.code, adminFullName);
 
       const userQ = await client.query(
         `
-        INSERT INTO users (id, tenant_id, full_name, email, phone, password_hash, is_active, created_at)
-        VALUES (uuid_generate_v4(), $1, $2, $3, $4, $5, true, now())
+        INSERT INTO users (id, tenant_id, staff_code, full_name, email, phone, password_hash, is_active, created_at)
+        VALUES (uuid_generate_v4(), $1, $2, $3, $4, $5, $6, true, now())
         RETURNING 
           id,
+          staff_code AS "staffCode",
           tenant_id AS "tenantId",
           full_name AS "fullName",
           email,
           phone
         `,
-        [tenant.id, adminFullName, adminEmail || null, adminPhone || null, passwordHash]
+        [tenant.id, staffCode, adminFullName, adminEmail || null, adminPhone || null, passwordHash]
       );
 
       const admin = userQ.rows[0];
 
-      // 3) Ensure ADMIN role
       const roleQ = await client.query(
         `
         INSERT INTO roles (tenant_id, name, created_at)
@@ -104,7 +129,6 @@ module.exports = {
 
       const roleId = roleQ.rows[0].id;
 
-      // 4) link admin -> ADMIN role
       await client.query(
         `
         INSERT INTO user_roles (user_id, role_id)
@@ -114,14 +138,15 @@ module.exports = {
         [admin.id, roleId]
       );
 
-      // ✅ seed default roles for this tenant (idempotent) - IMPORTANT: use SAME transaction client
       await rolesService.ensureDefaultRolesForTenant(tenant.id, client);
 
       await client.query('COMMIT');
 
       return res.status(201).json({ tenant, admin });
     } catch (err) {
-      try { await client.query('ROLLBACK'); } catch {}
+      try {
+        await client.query('ROLLBACK');
+      } catch {}
       return next(err);
     } finally {
       client.release();
@@ -130,9 +155,6 @@ module.exports = {
 
   async login(req, res, next) {
     try {
-      // ✅ Backward compatible:
-      // - Old body: { tenantId, email/phone, password }
-      // - New body: { tenant, email/phone, password }  (tenant is code OR uuid)
       const { tenantId, tenant, email, phone, password } = req.body;
       const result = await authService.login({ tenantId, tenant, email, phone, password });
       return res.json(result);
