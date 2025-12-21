@@ -31,14 +31,14 @@ class DepartmentsApiServiceV2 {
     return <String, dynamic>{};
   }
 
-  /// ✅ Facility departments (protected by permissions)
-  /// GET /api/departments?query=&active=
+  /// ✅ Tenant activated departments
+  /// GET /api/facility/departments
   Future<List<Map<String, dynamic>>> listDepartments({
     String query = '',
     bool? active,
   }) async {
     final res = await _dio.get(
-      '/api/departments',
+      '/api/facility/departments',
       queryParameters: {
         if (query.trim().isNotEmpty) 'query': query.trim(),
         if (active != null) 'active': active.toString(),
@@ -47,29 +47,19 @@ class DepartmentsApiServiceV2 {
     return _asListOfMap(res.data);
   }
 
-  /// POST /api/departments
-  /// body: { code?: string, name: string, isActive?: bool }
-  /// POST /api/departments
-  /// body: { code?: string, name: string, isActive?: bool, roomsCount?: int, bedsPerRoom?: int }
+  /// ❌ لا يُستخدم مباشرة بعد الآن
+  /// (أبقيناه فقط للتوافق إن كان مستعملًا في مكان آخر)
   Future<Map<String, dynamic>> createDepartment({
     String? code,
     required String name,
     bool isActive = true,
-
-    // ✅ NEW
-    int? roomsCount,
-    int? bedsPerRoom,
   }) async {
     final res = await _dio.post(
-      '/api/departments',
+      '/api/facility/departments',
       data: {
         'code': (code?.trim().isEmpty ?? true) ? null : code!.trim(),
         'name': name.trim(),
         'isActive': isActive,
-
-        // ✅ send only when provided
-        if (roomsCount != null) 'roomsCount': roomsCount,
-        if (bedsPerRoom != null) 'bedsPerRoom': bedsPerRoom,
       },
     );
 
@@ -79,7 +69,29 @@ class DepartmentsApiServiceV2 {
     return data;
   }
 
-  /// PATCH /api/departments/:id
+  /// ✅ المرحلة 2 (المهم)
+  /// POST /api/facility/departments/activate
+  Future<Map<String, dynamic>> activateDepartment({
+    required String systemDepartmentId,
+    int roomsCount = 1,
+    int bedsPerRoom = 1,
+  }) async {
+    final res = await _dio.post(
+      '/api/facility/departments/activate',
+      data: {
+        'systemDepartmentId': systemDepartmentId,
+        'roomsCount': roomsCount,
+        'bedsPerRoom': bedsPerRoom,
+      },
+    );
+
+    final data = _asMap(res.data);
+    final d = data['data'];
+    if (d is Map) return d.cast<String, dynamic>();
+    return data;
+  }
+
+  /// PATCH /api/facility/departments/:id
   Future<Map<String, dynamic>> updateDepartment({
     required String id,
     String? code,
@@ -87,22 +99,23 @@ class DepartmentsApiServiceV2 {
     bool? isActive,
   }) async {
     final res = await _dio.patch(
-      '/api/departments/$id',
+      '/api/facility/departments/$id',
       data: {
         if (code != null) 'code': code.trim(),
         if (name != null) 'name': name.trim(),
         if (isActive != null) 'isActive': isActive,
       },
     );
+
     final data = _asMap(res.data);
     final d = data['data'];
     if (d is Map) return d.cast<String, dynamic>();
     return data;
   }
 
-  /// DELETE /api/departments/:id  (soft delete -> is_active=false in backend)
+  /// DELETE /api/facility/departments/:id
   Future<Map<String, dynamic>> deleteDepartment(String id) async {
-    final res = await _dio.delete('/api/departments/$id');
+    final res = await _dio.delete('/api/facility/departments/$id');
     final data = _asMap(res.data);
     final d = data['data'];
     if (d is Map) return d.cast<String, dynamic>();

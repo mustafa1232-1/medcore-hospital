@@ -12,12 +12,6 @@ class LookupsApiServiceV2 {
     if (v is Map) {
       final m = v.cast<String, dynamic>();
 
-      // common shapes:
-      // { ok:true, items:[...] }
-      // { items:[...] }
-      // { departments:[...] }
-      // { data:[...] }
-      // { data:{ items:[...] } }
       dynamic items =
           m['items'] ?? m['departments'] ?? m['data'] ?? m['results'];
 
@@ -37,8 +31,8 @@ class LookupsApiServiceV2 {
     return const [];
   }
 
-  /// ✅ Correct endpoint for your current backend:
-  /// GET /api/lookups/departments?q=&limit=
+  /// ✅ Tenant departments (used for doctor/nurse assignment)
+  /// GET /api/lookups/departments
   Future<List<Map<String, dynamic>>> listDepartments({
     String q = '',
     int limit = 100,
@@ -48,6 +42,13 @@ class LookupsApiServiceV2 {
       queryParameters: {if (q.trim().isNotEmpty) 'q': q.trim(), 'limit': limit},
     );
 
+    return _asListOfMap(res.data);
+  }
+
+  /// ✅ System fixed departments (catalog)
+  /// GET /api/lookups/system-departments
+  Future<List<Map<String, dynamic>>> listSystemDepartments() async {
+    final res = await _dio.get('/api/lookups/system-departments');
     return _asListOfMap(res.data);
   }
 }

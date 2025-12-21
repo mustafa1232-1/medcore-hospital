@@ -197,5 +197,8 @@ router.get('/departments', requireAuth, async (req, res, next) => {
     return next(e);
   }
 });
+const systemDepartmentsRoutes = require('./lookups.system.routes');
+
+router.use(systemDepartmentsRoutes);
 
 module.exports = router;
