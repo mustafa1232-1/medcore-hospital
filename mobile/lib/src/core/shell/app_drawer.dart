@@ -11,10 +11,39 @@ class AppDrawer extends StatelessWidget {
 
   const AppDrawer({super.key, required this.current, required this.onSelect});
 
+  List<String> _rolesOf(AuthStore auth) {
+    final u = auth.user;
+    if (u is Map<String, dynamic>) {
+      final raw = u['roles'];
+      if (raw is List) {
+        return raw.map((e) => e.toString().toUpperCase().trim()).toList();
+      }
+    }
+    return const [];
+  }
+
+  bool _hasRole(AuthStore auth, String role) {
+    final roles = _rolesOf(auth);
+    return roles.contains(role.toUpperCase().trim());
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final t = AppLocalizations.of(context);
+    final auth = context.watch<AuthStore>();
+
+    final isAdmin = _hasRole(auth, 'ADMIN');
+    final isDoctor = _hasRole(auth, 'DOCTOR');
+    final isNurse = _hasRole(auth, 'NURSE');
+
+    final allowed = <ShellPage>{
+      ShellPage.home,
+      ShellPage.account,
+      if (isAdmin) ShellPage.staff,
+      if (isDoctor) ShellPage.orders,
+      if (isNurse) ShellPage.tasks,
+    };
 
     Widget tile({
       required ShellPage page,
@@ -39,7 +68,6 @@ class AppDrawer extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Header
               Container(
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
@@ -62,7 +90,6 @@ class AppDrawer extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // ✅ Brand ثابت لا يترجم
                           Text(
                             'CareSync',
                             style: theme.textTheme.titleMedium?.copyWith(
@@ -86,23 +113,49 @@ class AppDrawer extends StatelessWidget {
 
               const SizedBox(height: 12),
 
-              tile(
-                page: ShellPage.home,
-                icon: Icons.dashboard_rounded,
-                label: t.nav_home,
-              ),
-              const SizedBox(height: 6),
-              tile(
-                page: ShellPage.staff,
-                icon: Icons.groups_rounded,
-                label: t.nav_staff,
-              ),
-              const SizedBox(height: 6),
-              tile(
-                page: ShellPage.account,
-                icon: Icons.person_rounded,
-                label: t.nav_account,
-              ),
+              if (allowed.contains(ShellPage.home)) ...[
+                tile(
+                  page: ShellPage.home,
+                  icon: Icons.dashboard_rounded,
+                  label: t.nav_home,
+                ),
+                const SizedBox(height: 6),
+              ],
+
+              if (allowed.contains(ShellPage.staff)) ...[
+                tile(
+                  page: ShellPage.staff,
+                  icon: Icons.groups_rounded,
+                  label: t.nav_staff,
+                ),
+                const SizedBox(height: 6),
+              ],
+
+              if (allowed.contains(ShellPage.orders)) ...[
+                tile(
+                  page: ShellPage.orders,
+                  icon: Icons.playlist_add_check_rounded,
+                  label: t.nav_orders,
+                ),
+                const SizedBox(height: 6),
+              ],
+
+              if (allowed.contains(ShellPage.tasks)) ...[
+                tile(
+                  page: ShellPage.tasks,
+                  icon: Icons.task_alt_rounded,
+                  label: t.nav_tasks,
+                ),
+                const SizedBox(height: 6),
+              ],
+
+              if (allowed.contains(ShellPage.account)) ...[
+                tile(
+                  page: ShellPage.account,
+                  icon: Icons.person_rounded,
+                  label: t.nav_account,
+                ),
+              ],
 
               const Spacer(),
 

@@ -128,6 +128,18 @@ abstract class AppLocalizations {
   /// **'Account'**
   String get nav_account;
 
+  /// No description provided for @nav_orders.
+  ///
+  /// In en, this message translates to:
+  /// **'Orders'**
+  String get nav_orders;
+
+  /// No description provided for @nav_tasks.
+  ///
+  /// In en, this message translates to:
+  /// **'My Tasks'**
+  String get nav_tasks;
+
   /// No description provided for @login_title.
   ///
   /// In en, this message translates to:
@@ -799,6 +811,246 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Soon'**
   String get common_soon;
+
+  /// No description provided for @orders_title.
+  ///
+  /// In en, this message translates to:
+  /// **'Orders Dashboard'**
+  String get orders_title;
+
+  /// No description provided for @orders_create.
+  ///
+  /// In en, this message translates to:
+  /// **'Create order'**
+  String get orders_create;
+
+  /// No description provided for @orders_details_title.
+  ///
+  /// In en, this message translates to:
+  /// **'Order details'**
+  String get orders_details_title;
+
+  /// No description provided for @orders_search_hint.
+  ///
+  /// In en, this message translates to:
+  /// **'Search (code/patient/room)'**
+  String get orders_search_hint;
+
+  /// No description provided for @orders_patient.
+  ///
+  /// In en, this message translates to:
+  /// **'Patient'**
+  String get orders_patient;
+
+  /// No description provided for @orders_room_bed.
+  ///
+  /// In en, this message translates to:
+  /// **'Room/Bed'**
+  String get orders_room_bed;
+
+  /// No description provided for @orders_from_doctor.
+  ///
+  /// In en, this message translates to:
+  /// **'From'**
+  String get orders_from_doctor;
+
+  /// No description provided for @orders_to.
+  ///
+  /// In en, this message translates to:
+  /// **'To'**
+  String get orders_to;
+
+  /// No description provided for @orders_priority.
+  ///
+  /// In en, this message translates to:
+  /// **'Priority'**
+  String get orders_priority;
+
+  /// No description provided for @orders_notes.
+  ///
+  /// In en, this message translates to:
+  /// **'Notes'**
+  String get orders_notes;
+
+  /// No description provided for @orders_target.
+  ///
+  /// In en, this message translates to:
+  /// **'Target'**
+  String get orders_target;
+
+  /// No description provided for @orders_assignee.
+  ///
+  /// In en, this message translates to:
+  /// **'Assign to'**
+  String get orders_assignee;
+
+  /// No description provided for @orders_pick.
+  ///
+  /// In en, this message translates to:
+  /// **'Pick'**
+  String get orders_pick;
+
+  /// No description provided for @orders_pick_patient.
+  ///
+  /// In en, this message translates to:
+  /// **'Pick patient'**
+  String get orders_pick_patient;
+
+  /// No description provided for @orders_pick_patient_hint.
+  ///
+  /// In en, this message translates to:
+  /// **'Select patient'**
+  String get orders_pick_patient_hint;
+
+  /// No description provided for @orders_search_patient_hint.
+  ///
+  /// In en, this message translates to:
+  /// **'Search patient (name/phone)'**
+  String get orders_search_patient_hint;
+
+  /// No description provided for @orders_pick_assignee.
+  ///
+  /// In en, this message translates to:
+  /// **'Pick staff'**
+  String get orders_pick_assignee;
+
+  /// No description provided for @orders_pick_assignee_hint.
+  ///
+  /// In en, this message translates to:
+  /// **'Select staff'**
+  String get orders_pick_assignee_hint;
+
+  /// No description provided for @orders_patient_required.
+  ///
+  /// In en, this message translates to:
+  /// **'Patient is required'**
+  String get orders_patient_required;
+
+  /// No description provided for @orders_assignee_required.
+  ///
+  /// In en, this message translates to:
+  /// **'Assignee is required'**
+  String get orders_assignee_required;
+
+  /// No description provided for @orders_no_results.
+  ///
+  /// In en, this message translates to:
+  /// **'No results'**
+  String get orders_no_results;
+
+  /// No description provided for @orders_submit.
+  ///
+  /// In en, this message translates to:
+  /// **'Submit order'**
+  String get orders_submit;
+
+  /// No description provided for @orders_sending.
+  ///
+  /// In en, this message translates to:
+  /// **'Sending...'**
+  String get orders_sending;
+
+  /// No description provided for @orders_create_done.
+  ///
+  /// In en, this message translates to:
+  /// **'Order created successfully'**
+  String get orders_create_done;
+
+  /// No description provided for @orders_ping.
+  ///
+  /// In en, this message translates to:
+  /// **'Request update'**
+  String get orders_ping;
+
+  /// No description provided for @orders_ping_done.
+  ///
+  /// In en, this message translates to:
+  /// **'Status update request sent'**
+  String get orders_ping_done;
+
+  /// No description provided for @orders_escalate.
+  ///
+  /// In en, this message translates to:
+  /// **'Escalate'**
+  String get orders_escalate;
+
+  /// No description provided for @orders_escalate_done.
+  ///
+  /// In en, this message translates to:
+  /// **'Escalated successfully'**
+  String get orders_escalate_done;
+
+  /// No description provided for @orders_reason_optional.
+  ///
+  /// In en, this message translates to:
+  /// **'Reason (optional)'**
+  String get orders_reason_optional;
+
+  /// No description provided for @order_kind_medication.
+  ///
+  /// In en, this message translates to:
+  /// **'Medication'**
+  String get order_kind_medication;
+
+  /// No description provided for @order_kind_lab.
+  ///
+  /// In en, this message translates to:
+  /// **'Lab'**
+  String get order_kind_lab;
+
+  /// No description provided for @order_kind_procedure.
+  ///
+  /// In en, this message translates to:
+  /// **'Procedure'**
+  String get order_kind_procedure;
+
+  /// No description provided for @tasks_title.
+  ///
+  /// In en, this message translates to:
+  /// **'My Tasks'**
+  String get tasks_title;
+
+  /// No description provided for @tasks_filter_status.
+  ///
+  /// In en, this message translates to:
+  /// **'Status filter'**
+  String get tasks_filter_status;
+
+  /// No description provided for @tasks_refresh.
+  ///
+  /// In en, this message translates to:
+  /// **'Refresh'**
+  String get tasks_refresh;
+
+  /// No description provided for @tasks_empty.
+  ///
+  /// In en, this message translates to:
+  /// **'No tasks'**
+  String get tasks_empty;
+
+  /// No description provided for @tasks_start.
+  ///
+  /// In en, this message translates to:
+  /// **'Start'**
+  String get tasks_start;
+
+  /// No description provided for @tasks_complete.
+  ///
+  /// In en, this message translates to:
+  /// **'Complete'**
+  String get tasks_complete;
+
+  /// No description provided for @tasks_note_title.
+  ///
+  /// In en, this message translates to:
+  /// **'Note (optional)'**
+  String get tasks_note_title;
+
+  /// No description provided for @tasks_note_hint.
+  ///
+  /// In en, this message translates to:
+  /// **'Write a note...'**
+  String get tasks_note_hint;
 }
 
 class _AppLocalizationsDelegate

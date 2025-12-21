@@ -198,4 +198,50 @@ router.get('/departments', requireAuth, async (req, res, next) => {
   }
 });
 
+/**
+ * ✅ System Departments (fixed catalog)
+ * GET /api/lookups/system-departments?q=&limit=
+ * - For activating departments (admin) and for UIs that need the canonical list.
+ */
+router.get('/system-departments', requireAuth, async (req, res, next) => {
+  try {
+    const q = str(req.query.q);
+    const limit = Math.min(toInt(req.query.limit, 100), 200);
+
+    const params = [];
+    let where = `WHERE is_active = true`;
+
+    if (q) {
+      params.push(`%${q}%`);
+      const p = `$${params.length}`;
+      where += ` AND (name_ar ILIKE ${p} OR name_en ILIKE ${p} OR code ILIKE ${p})`;
+    }
+
+    params.push(limit);
+
+    const { rows } = await pool.query(
+      `
+      SELECT id, code, name_ar, name_en
+      FROM system_departments
+      ${where}
+      ORDER BY sort_order ASC, name_ar ASC
+      LIMIT $${params.length}
+      `,
+      params
+    );
+
+    const items = rows.map(d => ({
+      id: d.id,
+      code: d.code,
+      nameAr: d.name_ar,
+      nameEn: d.name_en,
+      label: d.name_ar,
+    }));
+
+    return res.json({ ok: true, items });
+  } catch (e) {
+    return next(e);
+  }
+});
+
 module.exports = router;

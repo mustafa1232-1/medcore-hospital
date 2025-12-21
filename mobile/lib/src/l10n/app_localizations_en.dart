@@ -24,6 +24,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get nav_account => 'Account';
 
   @override
+  String get nav_orders => 'Orders';
+
+  @override
+  String get nav_tasks => 'My Tasks';
+
+  @override
   String get login_title => 'Sign in';
 
   @override
@@ -368,4 +374,124 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get common_soon => 'Soon';
+
+  @override
+  String get orders_title => 'Orders Dashboard';
+
+  @override
+  String get orders_create => 'Create order';
+
+  @override
+  String get orders_details_title => 'Order details';
+
+  @override
+  String get orders_search_hint => 'Search (code/patient/room)';
+
+  @override
+  String get orders_patient => 'Patient';
+
+  @override
+  String get orders_room_bed => 'Room/Bed';
+
+  @override
+  String get orders_from_doctor => 'From';
+
+  @override
+  String get orders_to => 'To';
+
+  @override
+  String get orders_priority => 'Priority';
+
+  @override
+  String get orders_notes => 'Notes';
+
+  @override
+  String get orders_target => 'Target';
+
+  @override
+  String get orders_assignee => 'Assign to';
+
+  @override
+  String get orders_pick => 'Pick';
+
+  @override
+  String get orders_pick_patient => 'Pick patient';
+
+  @override
+  String get orders_pick_patient_hint => 'Select patient';
+
+  @override
+  String get orders_search_patient_hint => 'Search patient (name/phone)';
+
+  @override
+  String get orders_pick_assignee => 'Pick staff';
+
+  @override
+  String get orders_pick_assignee_hint => 'Select staff';
+
+  @override
+  String get orders_patient_required => 'Patient is required';
+
+  @override
+  String get orders_assignee_required => 'Assignee is required';
+
+  @override
+  String get orders_no_results => 'No results';
+
+  @override
+  String get orders_submit => 'Submit order';
+
+  @override
+  String get orders_sending => 'Sending...';
+
+  @override
+  String get orders_create_done => 'Order created successfully';
+
+  @override
+  String get orders_ping => 'Request update';
+
+  @override
+  String get orders_ping_done => 'Status update request sent';
+
+  @override
+  String get orders_escalate => 'Escalate';
+
+  @override
+  String get orders_escalate_done => 'Escalated successfully';
+
+  @override
+  String get orders_reason_optional => 'Reason (optional)';
+
+  @override
+  String get order_kind_medication => 'Medication';
+
+  @override
+  String get order_kind_lab => 'Lab';
+
+  @override
+  String get order_kind_procedure => 'Procedure';
+
+  @override
+  String get tasks_title => 'My Tasks';
+
+  @override
+  String get tasks_filter_status => 'Status filter';
+
+  @override
+  String get tasks_refresh => 'Refresh';
+
+  @override
+  String get tasks_empty => 'No tasks';
+
+  @override
+  String get tasks_start => 'Start';
+
+  @override
+  String get tasks_complete => 'Complete';
+
+  @override
+  String get tasks_note_title => 'Note (optional)';
+
+  @override
+  String get tasks_note_hint => 'Write a note...';
 }

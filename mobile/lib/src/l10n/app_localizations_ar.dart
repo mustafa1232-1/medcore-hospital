@@ -24,6 +24,12 @@ class AppLocalizationsAr extends AppLocalizations {
   String get nav_account => 'الحساب';
 
   @override
+  String get nav_orders => 'الأوامر';
+
+  @override
+  String get nav_tasks => 'مهامي';
+
+  @override
   String get login_title => 'تسجيل الدخول';
 
   @override
@@ -364,4 +370,124 @@ class AppLocalizationsAr extends AppLocalizations {
 
   @override
   String get common_soon => 'قريباً';
+
+  @override
+  String get orders_title => 'لوحة الأوامر';
+
+  @override
+  String get orders_create => 'إنشاء أمر';
+
+  @override
+  String get orders_details_title => 'تفاصيل الأمر';
+
+  @override
+  String get orders_search_hint => 'بحث (كود/مريض/غرفة)';
+
+  @override
+  String get orders_patient => 'المريض';
+
+  @override
+  String get orders_room_bed => 'الغرفة/السرير';
+
+  @override
+  String get orders_from_doctor => 'المرسل';
+
+  @override
+  String get orders_to => 'المستلم';
+
+  @override
+  String get orders_priority => 'الأولوية';
+
+  @override
+  String get orders_notes => 'ملاحظات';
+
+  @override
+  String get orders_target => 'إلى (الجهة)';
+
+  @override
+  String get orders_assignee => 'تعيين إلى';
+
+  @override
+  String get orders_pick => 'اختيار';
+
+  @override
+  String get orders_pick_patient => 'اختيار مريض';
+
+  @override
+  String get orders_pick_patient_hint => 'اختر المريض';
+
+  @override
+  String get orders_search_patient_hint => 'ابحث عن المريض (اسم/هاتف)';
+
+  @override
+  String get orders_pick_assignee => 'اختيار الموظف';
+
+  @override
+  String get orders_pick_assignee_hint => 'اختر الموظف';
+
+  @override
+  String get orders_patient_required => 'اختيار المريض مطلوب';
+
+  @override
+  String get orders_assignee_required => 'اختيار الموظف مطلوب';
+
+  @override
+  String get orders_no_results => 'لا توجد نتائج';
+
+  @override
+  String get orders_submit => 'إرسال الأمر';
+
+  @override
+  String get orders_sending => 'جاري الإرسال...';
+
+  @override
+  String get orders_create_done => 'تم إنشاء الأمر بنجاح';
+
+  @override
+  String get orders_ping => 'طلب تحديث';
+
+  @override
+  String get orders_ping_done => 'تم إرسال طلب تحديث الحالة';
+
+  @override
+  String get orders_escalate => 'تصعيد';
+
+  @override
+  String get orders_escalate_done => 'تم التصعيد بنجاح';
+
+  @override
+  String get orders_reason_optional => 'السبب (اختياري)';
+
+  @override
+  String get order_kind_medication => 'دواء';
+
+  @override
+  String get order_kind_lab => 'تحليل';
+
+  @override
+  String get order_kind_procedure => 'إجراء';
+
+  @override
+  String get tasks_title => 'مهامي';
+
+  @override
+  String get tasks_filter_status => 'فلتر الحالة';
+
+  @override
+  String get tasks_refresh => 'تحديث';
+
+  @override
+  String get tasks_empty => 'لا توجد مهام';
+
+  @override
+  String get tasks_start => 'بدء';
+
+  @override
+  String get tasks_complete => 'إنهاء';
+
+  @override
+  String get tasks_note_title => 'ملاحظة (اختياري)';
+
+  @override
+  String get tasks_note_hint => 'اكتب ملاحظة...';
 }

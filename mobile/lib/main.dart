@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
-
-import 'src/app.dart';
+import 'src_v2/app_v2.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const MedcoreApp());
+  runApp(const MedcoreAppV2());
 }

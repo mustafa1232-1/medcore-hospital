@@ -1,4 +1,4 @@
-enum ShellPage { home, staff, account }
+enum ShellPage { home, staff, orders, tasks, account }
 
 extension ShellPageX on ShellPage {
   String get key {
@@ -7,6 +7,10 @@ extension ShellPageX on ShellPage {
         return 'home';
       case ShellPage.staff:
         return 'staff';
+      case ShellPage.orders:
+        return 'orders';
+      case ShellPage.tasks:
+        return 'tasks';
       case ShellPage.account:
         return 'account';
     }
