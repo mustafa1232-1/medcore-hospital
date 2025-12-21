@@ -21,11 +21,8 @@ function normalizeRole(v) {
   return String(v ?? '').toUpperCase().trim();
 }
 
-/**
- * ✅ Patients lookup
- * GET /api/lookups/patients?q=&limit=
- * - أي مستخدم مسجّل دخول داخل Tenant يقدر يبحث/يختار مريض (Doctor/Nurse/Admin...)
- */
+// ✅ Patients lookup (FIXED for your schema)
+// GET /api/lookups/patients?q=&limit=
 router.get('/patients', requireAuth, async (req, res, next) => {
   try {
     const tenantId = req.user?.tenantId;
@@ -34,25 +31,26 @@ router.get('/patients', requireAuth, async (req, res, next) => {
     const q = str(req.query.q);
     const limit = Math.min(toInt(req.query.limit, 20), 50);
 
+    // params:
+    // $1 tenantId
+    // $2 limit
+    // $3 pattern (optional)
     const params = [tenantId, limit];
+
     let where = `p.tenant_id = $1`;
     if (q) {
       params.push(`%${q}%`);
       where += ` AND (
         p.full_name ILIKE $3
         OR COALESCE(p.phone,'') ILIKE $3
-        OR COALESCE(p.patient_code,'') ILIKE $3
       )`;
     }
 
-    // أعمدة شائعة: full_name, phone, patient_code
-    // إذا patient_code غير موجود عندك، احذفها من SELECT/WHERE بسهولة.
     const sql = `
       SELECT
         p.id,
         p.full_name AS "fullName",
-        p.phone,
-        COALESCE(p.patient_code, '') AS "patientCode"
+        p.phone
       FROM patients p
       WHERE ${where}
       ORDER BY p.full_name ASC
@@ -63,13 +61,10 @@ router.get('/patients', requireAuth, async (req, res, next) => {
 
     const items = r.rows.map(x => ({
       id: x.id,
-      label: x.patientCode && x.patientCode.length
-        ? `${x.fullName} — ${x.patientCode}`
-        : `${x.fullName}`,
+      label: x.phone ? `${x.fullName} — ${x.phone}` : `${x.fullName}`,
       sub: x.phone || '',
       fullName: x.fullName,
       phone: x.phone,
-      patientCode: x.patientCode,
     }));
 
     return res.json({ ok: true, items });
@@ -77,6 +72,7 @@ router.get('/patients', requireAuth, async (req, res, next) => {
     next(err);
   }
 });
+
 
 /**
  * ✅ Staff lookup
