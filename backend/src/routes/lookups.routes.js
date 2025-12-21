@@ -1,166 +1,168 @@
-// src/modules/lookups/lookups.routes.js
+// src/routes/lookups.routes.js
 const express = require('express');
-const { requireAuth } = require('../../middlewares/auth');
-const { HttpError } = require('../../utils/httpError');
+const pool = require('../db/pool');
 
-const pool = require('../../db/pool');
+const { requireAuth } = require('../middlewares/auth');
+const { HttpError } = require('../utils/httpError');
 
 const router = express.Router();
 
-function normalizeRole(x) {
-  return String(x || '').toUpperCase().trim();
+function str(v) {
+  return String(v ?? '').trim();
 }
 
-function roleNameOf(r) {
-  if (!r) return '';
-  if (typeof r === 'string') return r;
-  if (typeof r === 'object' && r.name) return String(r.name);
-  if (typeof r === 'object' && r.code) return String(r.code);
-  return '';
+function toInt(v, def = 20) {
+  const n = Number.parseInt(String(v ?? ''), 10);
+  if (Number.isFinite(n) && n > 0) return n;
+  return def;
 }
 
-function requireAnyRole(roles) {
-  const needed = (Array.isArray(roles) ? roles : [roles])
-    .map(normalizeRole)
-    .filter(Boolean);
-
-  return (req, _res, next) => {
-    const raw = Array.isArray(req.user?.roles) ? req.user.roles : [];
-    const have = raw.map(roleNameOf).map(normalizeRole).filter(Boolean);
-
-    const ok = needed.some(r => have.includes(r));
-    if (!ok) return next(new HttpError(403, 'Forbidden'));
-    return next();
-  };
+function normalizeRole(v) {
+  return String(v ?? '').toUpperCase().trim();
 }
-
-// ✅ حسب طلبك: ADMIN يشوف كل شيء + DOCTOR يحتاجهم لإنشاء الأوامر
-const LOOKUP_ROLES = ['ADMIN', 'DOCTOR'];
 
 /**
+ * ✅ Patients lookup
  * GET /api/lookups/patients?q=&limit=
- * returns: { items: [{id, label, fullName, phone}] }
+ * - أي مستخدم مسجّل دخول داخل Tenant يقدر يبحث/يختار مريض (Doctor/Nurse/Admin...)
  */
-router.get(
-  '/patients',
-  requireAuth,
-  requireAnyRole(LOOKUP_ROLES),
-  async (req, res, next) => {
-    try {
-      const tenantId = req.user?.tenantId;
-      if (!tenantId) return next(new HttpError(401, 'Unauthorized: invalid payload'));
+router.get('/patients', requireAuth, async (req, res, next) => {
+  try {
+    const tenantId = req.user?.tenantId;
+    if (!tenantId) return next(new HttpError(401, 'Unauthorized: invalid payload'));
 
-      const q = String(req.query.q || '').trim();
-      const limit = Math.min(parseInt(String(req.query.limit || '20'), 10) || 20, 50);
+    const q = str(req.query.q);
+    const limit = Math.min(toInt(req.query.limit, 20), 50);
 
-      // ✅ ملاحظة: نعتمد على جدول patients الموجود عندك من migration 004_patients_admissions.sql
-      // إذا أسماء الأعمدة تختلف عندك، أخبرني وسأطابقها 1:1
-      const sql = `
-        SELECT
-          p.id,
-          COALESCE(p.full_name, p.name, '') AS "fullName",
-          COALESCE(p.phone, '') AS "phone"
-        FROM patients p
-        WHERE p.tenant_id = $1
-          AND (
-            $2 = '' OR
-            COALESCE(p.full_name, p.name, '') ILIKE '%' || $2 || '%' OR
-            COALESCE(p.phone, '') ILIKE '%' || $2 || '%'
-          )
-        ORDER BY COALESCE(p.full_name, p.name, '') ASC
-        LIMIT $3
-      `;
-
-      const r = await pool.query(sql, [tenantId, q, limit]);
-
-      const items = r.rows.map(x => {
-        const fullName = String(x.fullName || '').trim();
-        const phone = String(x.phone || '').trim();
-        const label = [fullName, phone ? `• ${phone}` : ''].join(' ').trim();
-
-        return {
-          id: x.id,
-          label,
-          fullName,
-          phone,
-        };
-      });
-
-      return res.json({ ok: true, items });
-    } catch (err) {
-      next(err);
+    const params = [tenantId, limit];
+    let where = `p.tenant_id = $1`;
+    if (q) {
+      params.push(`%${q}%`);
+      where += ` AND (
+        p.full_name ILIKE $3
+        OR COALESCE(p.phone,'') ILIKE $3
+        OR COALESCE(p.patient_code,'') ILIKE $3
+      )`;
     }
+
+    // أعمدة شائعة: full_name, phone, patient_code
+    // إذا patient_code غير موجود عندك، احذفها من SELECT/WHERE بسهولة.
+    const sql = `
+      SELECT
+        p.id,
+        p.full_name AS "fullName",
+        p.phone,
+        COALESCE(p.patient_code, '') AS "patientCode"
+      FROM patients p
+      WHERE ${where}
+      ORDER BY p.full_name ASC
+      LIMIT $2
+    `;
+
+    const r = await pool.query(sql, params);
+
+    const items = r.rows.map(x => ({
+      id: x.id,
+      label: x.patientCode && x.patientCode.length
+        ? `${x.fullName} — ${x.patientCode}`
+        : `${x.fullName}`,
+      sub: x.phone || '',
+      fullName: x.fullName,
+      phone: x.phone,
+      patientCode: x.patientCode,
+    }));
+
+    return res.json({ ok: true, items });
+  } catch (err) {
+    next(err);
   }
-);
+});
 
 /**
+ * ✅ Staff lookup
  * GET /api/lookups/staff?role=NURSE&q=&limit=
- * returns: { items: [{id, label, fullName, staffCode}] }
+ * - الهدف: Doctor/Admin يختارون موظف بالاسم حسب role
  */
-router.get(
-  '/staff',
-  requireAuth,
-  requireAnyRole(LOOKUP_ROLES),
-  async (req, res, next) => {
-    try {
-      const tenantId = req.user?.tenantId;
-      if (!tenantId) return next(new HttpError(401, 'Unauthorized: invalid payload'));
+router.get('/staff', requireAuth, async (req, res, next) => {
+  try {
+    const tenantId = req.user?.tenantId;
+    if (!tenantId) return next(new HttpError(401, 'Unauthorized: invalid payload'));
 
-      const role = normalizeRole(req.query.role);
-      const q = String(req.query.q || '').trim();
-      const limit = Math.min(parseInt(String(req.query.limit || '20'), 10) || 20, 50);
+    const role = normalizeRole(req.query.role);
+    if (!role) return next(new HttpError(400, 'role is required'));
 
-      if (!role) return next(new HttpError(400, 'Validation error', ['role is required']));
+    const q = str(req.query.q);
+    const limit = Math.min(toInt(req.query.limit, 20), 50);
 
-      // ✅ يفترض عندك users + user_roles + roles (من migrations السابقة)
-      // فلترة الدور تتم عبر EXISTS (أفضل من JOIN لأن user ممكن عنده أكثر من role)
-      const sql = `
-        SELECT
-          u.id,
-          u.full_name AS "fullName",
-          u.staff_code AS "staffCode",
-          u.email,
-          u.phone
-        FROM users u
-        WHERE u.tenant_id = $1
-          AND u.is_active = TRUE
-          AND (
-            $2 = '' OR
-            u.full_name ILIKE '%' || $2 || '%' OR
-            COALESCE(u.email, '') ILIKE '%' || $2 || '%' OR
-            COALESCE(u.phone, '') ILIKE '%' || $2 || '%'
-          )
-          AND EXISTS (
-            SELECT 1
-            FROM user_roles ur
-            JOIN roles r ON r.id = ur.role_id
-            WHERE ur.user_id = u.id
-              AND UPPER(r.name) = $3
-          )
-        ORDER BY u.full_name ASC
-        LIMIT $4
+    // ✅ السماح: DOCTOR و ADMIN فقط (حسب طلبك)
+    const rolesRaw = Array.isArray(req.user?.roles) ? req.user.roles : [];
+    const roles = rolesRaw
+      .map(r => (typeof r === 'string' ? r : r?.name))
+      .filter(Boolean)
+      .map(x => String(x).toUpperCase().trim());
+
+    const canLookupStaff = roles.includes('DOCTOR') || roles.includes('ADMIN');
+    if (!canLookupStaff) return next(new HttpError(403, 'Forbidden'));
+
+    // نفترض وجود:
+    // users (id, tenant_id, full_name, staff_code, email, phone, is_active)
+    // user_roles (user_id, role_id)
+    // roles (id, name)
+    //
+    // إذا اسم جدول user_roles عندك مختلف، فقط غيّره هنا.
+    const params = [tenantId, role, limit];
+    let qFilter = '';
+    if (q) {
+      params.push(`%${q}%`);
+      qFilter = `
+        AND (
+          u.full_name ILIKE $4
+          OR COALESCE(u.staff_code,'') ILIKE $4
+          OR COALESCE(u.email,'') ILIKE $4
+          OR COALESCE(u.phone,'') ILIKE $4
+        )
       `;
-
-      const r = await pool.query(sql, [tenantId, q, role, limit]);
-
-      const items = r.rows.map(x => {
-        const fullName = String(x.fullName || '').trim();
-        const staffCode = String(x.staffCode || '').trim();
-        const label = [fullName, staffCode ? `• ${staffCode}` : ''].join(' ').trim();
-
-        return {
-          id: x.id,
-          label,
-          fullName,
-          staffCode,
-        };
-      });
-
-      return res.json({ ok: true, items });
-    } catch (err) {
-      next(err);
     }
+
+    const sql = `
+      SELECT
+        u.id,
+        u.full_name AS "fullName",
+        u.staff_code AS "staffCode",
+        u.email,
+        u.phone
+      FROM users u
+      WHERE
+        u.tenant_id = $1
+        AND u.is_active = true
+        AND EXISTS (
+          SELECT 1
+          FROM user_roles ur
+          JOIN roles r ON r.id = ur.role_id
+          WHERE ur.user_id = u.id
+            AND UPPER(r.name) = $2
+        )
+        ${qFilter}
+      ORDER BY u.full_name ASC
+      LIMIT $3
+    `;
+
+    const r = await pool.query(sql, params);
+
+    const items = r.rows.map(x => ({
+      id: x.id,
+      label: x.staffCode ? `${x.fullName} — ${x.staffCode}` : `${x.fullName}`,
+      sub: x.phone || x.email || '',
+      fullName: x.fullName,
+      staffCode: x.staffCode,
+      email: x.email,
+      phone: x.phone,
+    }));
+
+    return res.json({ ok: true, items });
+  } catch (err) {
+    next(err);
   }
-);
+});
 
 module.exports = router;
