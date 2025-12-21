@@ -21,7 +21,7 @@ function normalizeRole(v) {
   return String(v ?? '').toUpperCase().trim();
 }
 
-// ✅ Patients lookup (FIXED for your schema)
+// ✅ Patients lookup
 // GET /api/lookups/patients?q=&limit=
 router.get('/patients', requireAuth, async (req, res, next) => {
   try {
@@ -31,13 +31,9 @@ router.get('/patients', requireAuth, async (req, res, next) => {
     const q = str(req.query.q);
     const limit = Math.min(toInt(req.query.limit, 20), 50);
 
-    // params:
-    // $1 tenantId
-    // $2 limit
-    // $3 pattern (optional)
     const params = [tenantId, limit];
-
     let where = `p.tenant_id = $1`;
+
     if (q) {
       params.push(`%${q}%`);
       where += ` AND (
@@ -73,11 +69,9 @@ router.get('/patients', requireAuth, async (req, res, next) => {
   }
 });
 
-
 /**
  * ✅ Staff lookup
  * GET /api/lookups/staff?role=NURSE&q=&limit=
- * - الهدف: Doctor/Admin يختارون موظف بالاسم حسب role
  */
 router.get('/staff', requireAuth, async (req, res, next) => {
   try {
@@ -90,7 +84,7 @@ router.get('/staff', requireAuth, async (req, res, next) => {
     const q = str(req.query.q);
     const limit = Math.min(toInt(req.query.limit, 20), 50);
 
-    // ✅ السماح: DOCTOR و ADMIN فقط (حسب طلبك)
+    // ✅ السماح: DOCTOR و ADMIN فقط
     const rolesRaw = Array.isArray(req.user?.roles) ? req.user.roles : [];
     const roles = rolesRaw
       .map(r => (typeof r === 'string' ? r : r?.name))
@@ -100,12 +94,6 @@ router.get('/staff', requireAuth, async (req, res, next) => {
     const canLookupStaff = roles.includes('DOCTOR') || roles.includes('ADMIN');
     if (!canLookupStaff) return next(new HttpError(403, 'Forbidden'));
 
-    // نفترض وجود:
-    // users (id, tenant_id, full_name, staff_code, email, phone, is_active)
-    // user_roles (user_id, role_id)
-    // roles (id, name)
-    //
-    // إذا اسم جدول user_roles عندك مختلف، فقط غيّره هنا.
     const params = [tenantId, role, limit];
     let qFilter = '';
     if (q) {
@@ -160,11 +148,19 @@ router.get('/staff', requireAuth, async (req, res, next) => {
     next(err);
   }
 });
-// ✅ Departments lookup
+
+/**
+ * ✅ Departments lookup
+ * GET /api/lookups/departments?q=&limit=
+ * - For dropdowns (doctor/nurse department selection)
+ */
 router.get('/departments', requireAuth, async (req, res, next) => {
   try {
     const tenantId = req.user?.tenantId;
-    const q = String(req.query.q || '').trim();
+    if (!tenantId) return next(new HttpError(401, 'Unauthorized: invalid payload'));
+
+    const q = str(req.query.q);
+    const limit = Math.min(toInt(req.query.limit, 100), 200);
 
     const params = [tenantId];
     let where = `WHERE tenant_id = $1 AND is_active = true`;
@@ -175,18 +171,28 @@ router.get('/departments', requireAuth, async (req, res, next) => {
       where += ` AND (name ILIKE ${p} OR code ILIKE ${p})`;
     }
 
+    params.push(limit);
+
     const { rows } = await pool.query(
       `
       SELECT id, code, name
       FROM departments
       ${where}
       ORDER BY name ASC
-      LIMIT 100
+      LIMIT $${params.length}
       `,
       params
     );
 
-    return res.json({ ok: true, items: rows });
+    // ✅ unify with other lookups shape: id + label
+    const items = rows.map(d => ({
+      id: d.id,
+      code: d.code,
+      name: d.name,
+      label: d.name,
+    }));
+
+    return res.json({ ok: true, items });
   } catch (e) {
     return next(e);
   }
