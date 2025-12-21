@@ -5,6 +5,7 @@ const { requireAuth } = require('../../middlewares/auth');
 const { requireRole } = require('../../middlewares/roles');
 const { validateBody } = require('../../middlewares/validate');
 const { requireActiveAdmissionBed } = require('../../middlewares/requireActiveAdmissionBed');
+const { HttpError } = require('../../utils/httpError');
 
 const ctrl = require('./orders.controller');
 const {
@@ -17,39 +18,40 @@ const {
 
 const router = express.Router();
 
-/**
- * ✅ Policy (حسب طلبك):
- * - ADMIN لا يملك صلاحيات الأوامر
- * - DOCTOR ينشئ + يقدر يشوف (dashboard/details) + يقدر يلغي (إن رغبت)
- * - NURSE/LAB/PHARMACY يشوفون (dashboard/details) فقط
- *
- * ملاحظة: لم نغيّر أي Controller أو Validator أو منطق requireActiveAdmissionBed
- */
+function normalizeRole(x) {
+  return String(x || '').toUpperCase().trim();
+}
 
-// ✅ Helper محلي: يسمح لأي دور ضمن قائمة
+function roleNameOf(r) {
+  if (!r) return '';
+  if (typeof r === 'string') return r;
+  if (typeof r === 'object' && r.name) return String(r.name);
+  if (typeof r === 'object' && r.code) return String(r.code);
+  return '';
+}
+
 function requireAnyRole(roles) {
   const needed = (Array.isArray(roles) ? roles : [roles])
-    .map(r => String(r || '').toUpperCase().trim())
+    .map(normalizeRole)
     .filter(Boolean);
 
   return (req, _res, next) => {
-    const rolesRaw = Array.isArray(req.user?.roles) ? req.user.roles : [];
-    const normalized = rolesRaw
-      .map(r => (typeof r === 'string' ? r : r?.name))
-      .filter(Boolean)
-      .map(x => String(x).toUpperCase().trim());
+    const raw = Array.isArray(req.user?.roles) ? req.user.roles : [];
+    const have = raw.map(roleNameOf).map(normalizeRole).filter(Boolean);
 
-    const ok = needed.some(r => normalized.includes(r));
-    if (!ok) {
-      const { HttpError } = require('../../utils/httpError');
-      return next(new HttpError(403, 'Forbidden'));
-    }
+    const ok = needed.some(r => have.includes(r));
+    if (!ok) return next(new HttpError(403, 'Forbidden'));
     return next();
   };
 }
 
-// ✅ الأدوار التي يسمح لها بالعرض (List/Details)
-const ORDERS_VIEW_ROLES = ['DOCTOR', 'NURSE', 'LAB', 'PHARMACY'];
+/**
+ * ✅ Policy:
+ * - CREATE/CANCEL: DOCTOR فقط
+ * - VIEW (List/Details): DOCTOR + NURSE + LAB + PHARMACY + ADMIN
+ */
+
+const ORDERS_VIEW_ROLES = ['DOCTOR', 'NURSE', 'LAB', 'PHARMACY', 'ADMIN'];
 
 // List
 router.get(
@@ -57,14 +59,12 @@ router.get(
   requireAuth,
   requireAnyRole(ORDERS_VIEW_ROLES),
   async (req, _res, next) => {
-    // validate query manually using Joi (لأن validateBody خاص بالـ body)
     const { error, value } = listOrdersQuerySchema.validate(req.query, {
       abortEarly: false,
       stripUnknown: true,
     });
 
     if (error) {
-      const { HttpError } = require('../../utils/httpError');
       return next(
         new HttpError(
           400,
@@ -80,6 +80,7 @@ router.get(
   ctrl.list
 );
 
+// Details
 router.get(
   '/:id',
   requireAuth,
@@ -117,9 +118,7 @@ router.post(
   ctrl.createProcedure
 );
 
-// Cancel
-// ✅ حسب طلبك: لا ADMIN. خليها DOCTOR فقط.
-// (إذا لاحقاً تريد السماح للمستلم NURSE/LAB/PHARMACY بإلغاء/رفض، نضيف endpoint منفصل أو نوسعها هنا.)
+// Cancel (DOCTOR فقط)
 router.post(
   '/:id/cancel',
   requireAuth,
