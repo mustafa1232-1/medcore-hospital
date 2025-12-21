@@ -12,7 +12,7 @@ const meRoutes = require('./routes/me.routes');
 const rolesRoutes = require('./modules/roles/roles.routes');
 const facilityRoutes = require('./modules/facility/facility.routes');
 const usersRoutes = require('./modules/users/users.routes');
-
+const lookupsRoutes = require('./routes/lookups.routes');
 const patientsRoutes = require('./modules/patients/patients.routes');
 const admissionsRoutes = require('./modules/admissions/admissions.routes');
 
@@ -34,7 +34,7 @@ app.use('/api', meRoutes); // contains /me
 app.use('/api/roles', rolesRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/facility', facilityRoutes);
-
+app.use('/api/lookups', lookupsRoutes);
 app.use('/api/patients', patientsRoutes);
 app.use('/api/admissions', admissionsRoutes);
 
