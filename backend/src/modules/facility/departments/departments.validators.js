@@ -1,3 +1,4 @@
+// src/modules/facility/departments/departments.validators.js
 const Joi = require('joi');
 
 const createDepartmentSchema = Joi.object({
@@ -12,15 +13,31 @@ const updateDepartmentSchema = Joi.object({
   isActive: Joi.boolean(),
 }).min(1);
 
-// ✅ NEW: activate department from system catalog
+// ✅ Activate department from system catalog
+// ✅ defaults: roomsCount=1, bedsPerRoom=1 (user can change)
 const activateDepartmentSchema = Joi.object({
   systemDepartmentId: Joi.string().uuid().required(),
-  roomsCount: Joi.number().integer().min(1).required(),
-  bedsPerRoom: Joi.number().integer().min(1).required(),
+  roomsCount: Joi.number().integer().min(1).default(1),
+  bedsPerRoom: Joi.number().integer().min(1).default(1),
+});
+
+// ✅ NEW: transfer staff between departments
+const transferStaffSchema = Joi.object({
+  staffUserId: Joi.string().uuid().required(),
+  toDepartmentId: Joi.string().uuid().required(),
+});
+
+// ✅ NEW: remove staff from department (set department_id = NULL)
+const removeStaffSchema = Joi.object({
+  staffUserId: Joi.string().uuid().required(),
 });
 
 module.exports = {
   createDepartmentSchema,
   updateDepartmentSchema,
   activateDepartmentSchema,
+
+  // ✅ new
+  transferStaffSchema,
+  removeStaffSchema,
 };

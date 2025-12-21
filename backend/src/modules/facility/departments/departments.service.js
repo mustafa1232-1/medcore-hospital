@@ -23,6 +23,19 @@ function toPosInt(v, def = 1) {
   return def;
 }
 
+function normalizeRoles(raw) {
+  const arr = Array.isArray(raw) ? raw : [];
+  return arr
+    .map(r => (typeof r === 'string' ? r : r?.name))
+    .filter(Boolean)
+    .map(x => String(x).toUpperCase().trim());
+}
+
+function hasRole(actorRoles, role) {
+  const r = String(role).toUpperCase().trim();
+  return normalizeRoles(actorRoles).includes(r);
+}
+
 async function getTenantCode(tenantId) {
   const { rows } = await pool.query(
     `SELECT code FROM tenants WHERE id = $1 LIMIT 1`,
@@ -244,7 +257,7 @@ async function activateDepartmentFromSystemCatalog({
 }
 
 // =======================
-// ✅ NEW: Department Overview
+// ✅ Department Overview
 // =======================
 async function listStaffByRole({ tenantId, departmentId, roleName }) {
   const roleUpper = String(roleName || '').toUpperCase().trim();
@@ -266,6 +279,7 @@ async function listStaffByRole({ tenantId, departmentId, roleName }) {
         FROM user_roles ur
         JOIN roles r ON r.id = ur.role_id
         WHERE ur.user_id = u.id
+          AND r.tenant_id = u.tenant_id
           AND UPPER(r.name) = $3
       )
     ORDER BY u.full_name ASC
@@ -368,6 +382,154 @@ async function getDepartmentOverview({ tenantId, departmentId }) {
   };
 }
 
+// =======================
+// ✅ NEW: Transfer / Remove staff with rules
+// =======================
+async function getUserRolesById({ tenantId, userId }) {
+  const { rows } = await pool.query(
+    `
+    SELECT r.name
+    FROM user_roles ur
+    JOIN roles r ON r.id = ur.role_id
+    WHERE ur.user_id = $1
+      AND r.tenant_id = $2
+    ORDER BY r.name
+    `,
+    [userId, tenantId]
+  );
+  return rows.map(x => String(x.name).toUpperCase().trim());
+}
+
+async function getUserOr404({ tenantId, userId }) {
+  const { rows } = await pool.query(
+    `
+    SELECT id, tenant_id AS "tenantId", full_name AS "fullName",
+           is_active AS "isActive", department_id AS "departmentId"
+    FROM users
+    WHERE tenant_id = $1 AND id = $2
+    LIMIT 1
+    `,
+    [tenantId, userId]
+  );
+  if (!rows[0]) throw new HttpError(404, 'User not found');
+  return rows[0];
+}
+
+function enforceStaffChangePolicy({ actor, targetRoles, targetUserId }) {
+  const actorRoles = actor?.roles || [];
+  const actorId = actor?.userId;
+
+  const isAdmin = hasRole(actorRoles, 'ADMIN');
+  if (isAdmin) return;
+
+  const isDoctor = hasRole(actorRoles, 'DOCTOR');
+  if (!isDoctor) throw new HttpError(403, 'Forbidden');
+
+  // Doctor cannot change self
+  if (actorId && actorId === targetUserId) {
+    throw new HttpError(403, 'Doctor cannot change own department');
+  }
+
+  // Doctor can only move/remove nurses
+  const targetIsNurse = (targetRoles || []).includes('NURSE');
+  const targetIsDoctor = (targetRoles || []).includes('DOCTOR') || (targetRoles || []).includes('ADMIN');
+
+  if (!targetIsNurse || targetIsDoctor) {
+    throw new HttpError(403, 'Doctor can manage nurses only');
+  }
+}
+
+async function transferStaffBetweenDepartments({
+  tenantId,
+  fromDepartmentId,
+  staffUserId,
+  toDepartmentId,
+  actor,
+}) {
+  if (String(fromDepartmentId) === String(toDepartmentId)) {
+    throw new HttpError(409, 'toDepartmentId must be different');
+  }
+
+  // ensure departments exist (and same tenant)
+  await getDepartment({ tenantId, id: fromDepartmentId });
+  await getDepartment({ tenantId, id: toDepartmentId });
+
+  const user = await getUserOr404({ tenantId, userId: staffUserId });
+  if (!user.isActive) throw new HttpError(409, 'User is inactive');
+
+  // ensure user currently belongs to fromDepartmentId
+  if (String(user.departmentId || '') !== String(fromDepartmentId)) {
+    throw new HttpError(409, 'User is not assigned to this department');
+  }
+
+  const targetRoles = await getUserRolesById({ tenantId, userId: staffUserId });
+
+  enforceStaffChangePolicy({
+    actor,
+    targetRoles,
+    targetUserId: staffUserId,
+  });
+
+  const { rows } = await pool.query(
+    `
+    UPDATE users
+    SET department_id = $1
+    WHERE tenant_id = $2 AND id = $3
+    RETURNING id, department_id AS "departmentId"
+    `,
+    [toDepartmentId, tenantId, staffUserId]
+  );
+
+  return {
+    ok: true,
+    staffUserId,
+    fromDepartmentId,
+    toDepartmentId,
+    updated: rows[0] || null,
+  };
+}
+
+async function removeStaffFromDepartment({
+  tenantId,
+  departmentId,
+  staffUserId,
+  actor,
+}) {
+  await getDepartment({ tenantId, id: departmentId });
+
+  const user = await getUserOr404({ tenantId, userId: staffUserId });
+  if (!user.isActive) throw new HttpError(409, 'User is inactive');
+
+  if (String(user.departmentId || '') !== String(departmentId)) {
+    throw new HttpError(409, 'User is not assigned to this department');
+  }
+
+  const targetRoles = await getUserRolesById({ tenantId, userId: staffUserId });
+
+  enforceStaffChangePolicy({
+    actor,
+    targetRoles,
+    targetUserId: staffUserId,
+  });
+
+  const { rows } = await pool.query(
+    `
+    UPDATE users
+    SET department_id = NULL
+    WHERE tenant_id = $1 AND id = $2
+    RETURNING id, department_id AS "departmentId"
+    `,
+    [tenantId, staffUserId]
+  );
+
+  return {
+    ok: true,
+    staffUserId,
+    departmentId,
+    updated: rows[0] || null,
+  };
+}
+
 module.exports = {
   createDepartment,
   listDepartments,
@@ -376,6 +538,9 @@ module.exports = {
   softDeleteDepartment,
   activateDepartmentFromSystemCatalog,
 
-  // ✅ new
   getDepartmentOverview,
+
+  // ✅ new staff actions
+  transferStaffBetweenDepartments,
+  removeStaffFromDepartment,
 };

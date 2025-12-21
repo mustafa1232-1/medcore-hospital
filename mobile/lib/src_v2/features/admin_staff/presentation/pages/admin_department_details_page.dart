@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-
 import '../../../../core/shell/v2_shell_scaffold.dart';
-import '../../../orders/data/api/departments_api_service_v2.dart';
+import '../../../orders/data/api/rooms_api_service_v2.dart';
+import 'admin_room_beds_page.dart';
 
 class AdminDepartmentDetailsPage extends StatefulWidget {
   final String departmentId;
@@ -20,40 +20,45 @@ class AdminDepartmentDetailsPage extends StatefulWidget {
       _AdminDepartmentDetailsPageState();
 }
 
-class _AdminDepartmentDetailsPageState extends State<AdminDepartmentDetailsPage>
-    with SingleTickerProviderStateMixin {
-  final _api = DepartmentsApiServiceV2();
+class _AdminDepartmentDetailsPageState
+    extends State<AdminDepartmentDetailsPage> {
+  final _roomsApi = RoomsApiServiceV2();
+  final _q = TextEditingController();
 
   bool _loading = true;
   String? _error;
+  List<Map<String, dynamic>> _rooms = const [];
 
-  Map<String, dynamic>? _data;
-
-  late final TabController _tabs = TabController(length: 2, vsync: this);
+  bool _onlyActive = true;
 
   @override
   void initState() {
     super.initState();
-    _load();
+    _loadRooms();
   }
 
   @override
   void dispose() {
-    _tabs.dispose();
+    _q.dispose();
     super.dispose();
   }
 
-  Future<void> _load() async {
+  Future<void> _loadRooms() async {
     setState(() {
       _loading = true;
       _error = null;
     });
 
     try {
-      final data = await _api.getDepartmentOverview(widget.departmentId);
+      final items = await _roomsApi.listRooms(
+        departmentId: widget.departmentId,
+        query: _q.text,
+        active: _onlyActive ? true : null,
+      );
+
       if (!mounted) return;
       setState(() {
-        _data = data;
+        _rooms = items;
         _loading = false;
       });
     } catch (e) {
@@ -67,304 +72,223 @@ class _AdminDepartmentDetailsPageState extends State<AdminDepartmentDetailsPage>
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    final title = widget.departmentName?.trim().isNotEmpty == true
-        ? widget.departmentName!.trim()
+    final title = (widget.departmentName?.trim().isNotEmpty ?? false)
+        ? (widget.departmentName!.trim())
         : 'تفاصيل القسم';
 
     return V2ShellScaffold(
       title: title,
       actions: [
         IconButton(
-          onPressed: _load,
+          onPressed: _loadRooms,
           icon: const Icon(Icons.refresh_rounded),
           tooltip: 'تحديث',
         ),
       ],
-      body: Column(
-        children: [
-          Material(
-            color: theme.colorScheme.surface,
-            child: TabBar(
-              controller: _tabs,
-              tabs: const [
-                Tab(icon: Icon(Icons.groups_2_rounded), text: 'الكادر'),
-                Tab(icon: Icon(Icons.bed_rounded), text: 'الغرف والأسرة'),
+      body: RefreshIndicator(
+        onRefresh: _loadRooms,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+          children: [
+            _headerCard(context),
+
+            const SizedBox(height: 12),
+
+            TextField(
+              controller: _q,
+              textInputAction: TextInputAction.search,
+              onSubmitted: (_) => _loadRooms(),
+              decoration: InputDecoration(
+                prefixIcon: const Icon(Icons.search_rounded),
+                hintText: 'بحث بالغرفة (اسم/كود)',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 10),
+
+            Row(
+              children: [
+                FilterChip(
+                  selected: _onlyActive,
+                  label: const Text('فعّالة فقط'),
+                  onSelected: (v) {
+                    setState(() => _onlyActive = v);
+                    _loadRooms();
+                  },
+                ),
               ],
             ),
+
+            const SizedBox(height: 12),
+
+            if (_loading)
+              const Padding(
+                padding: EdgeInsets.only(top: 40),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else if (_error != null)
+              _errorBox(_error!, onRetry: _loadRooms)
+            else if (_rooms.isEmpty)
+              const Padding(
+                padding: EdgeInsets.only(top: 40),
+                child: Center(child: Text('لا توجد غرف لهذا القسم')),
+              )
+            else
+              ..._rooms.map(_roomTile),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _headerCard(BuildContext context) {
+    final theme = Theme.of(context);
+    final code = (widget.departmentCode ?? '').trim();
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: theme.dividerColor.withAlpha(40)),
+        color: theme.colorScheme.surface,
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 18,
+            backgroundColor: theme.colorScheme.primary.withAlpha(25),
+            child: Icon(
+              Icons.meeting_room_rounded,
+              color: theme.colorScheme.primary,
+            ),
           ),
+          const SizedBox(width: 10),
           Expanded(
-            child: RefreshIndicator(
-              onRefresh: _load,
-              child: _loading
-                  ? ListView(
-                      children: [
-                        SizedBox(height: 160),
-                        Center(child: CircularProgressIndicator()),
-                      ],
-                    )
-                  : (_error != null)
-                  ? ListView(
-                      padding: const EdgeInsets.all(16),
-                      children: [_ErrorBox(msg: _error!, onRetry: _load)],
-                    )
-                  : TabBarView(
-                      controller: _tabs,
-                      children: [
-                        _StaffTab(data: _data ?? const {}),
-                        _RoomsBedsTab(data: _data ?? const {}),
-                      ],
-                    ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'غرف القسم',
+                  style: TextStyle(fontWeight: FontWeight.w900),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  code.isEmpty
+                      ? 'اضغط على الغرفة لعرض الأسرة'
+                      : '($code) اضغط على الغرفة لعرض الأسرة',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.textTheme.bodySmall?.color?.withAlpha(180),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
       ),
     );
   }
-}
 
-class _StaffTab extends StatelessWidget {
-  final Map<String, dynamic> data;
-  const _StaffTab({required this.data});
-
-  List<Map<String, dynamic>> _asList(dynamic v) {
-    if (v is List) {
-      return v.whereType<Map>().map((e) => e.cast<String, dynamic>()).toList();
-    }
-    return const [];
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final staff = (data['staff'] is Map)
-        ? (data['staff'] as Map).cast<String, dynamic>()
-        : const <String, dynamic>{};
-
-    final doctors = _asList(staff['doctors']);
-    final nurses = _asList(staff['nurses']);
-
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
-      children: [
-        _section('الأطباء', doctors, icon: Icons.medical_services_rounded),
-        const SizedBox(height: 12),
-        _section('التمريض', nurses, icon: Icons.health_and_safety_rounded),
-      ],
-    );
-  }
-
-  Widget _section(
-    String title,
-    List<Map<String, dynamic>> items, {
-    required IconData icon,
-  }) {
-    return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                CircleAvatar(radius: 16, child: Icon(icon, size: 18)),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    title,
-                    style: const TextStyle(fontWeight: FontWeight.w900),
-                  ),
-                ),
-                Text(
-                  '${items.length}',
-                  style: const TextStyle(fontWeight: FontWeight.w900),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            if (items.isEmpty)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 10),
-                child: Text('لا يوجد'),
-              )
-            else
-              ...items.map((u) {
-                final fullName = (u['fullName'] ?? '').toString();
-                final staffCode = (u['staffCode'] ?? '').toString();
-                final phone = (u['phone'] ?? '').toString();
-                final email = (u['email'] ?? '').toString();
-
-                final sub = staffCode.isNotEmpty
-                    ? staffCode
-                    : (phone.isNotEmpty ? phone : email);
-
-                return ListTile(
-                  dense: true,
-                  title: Text(
-                    fullName.isEmpty ? '-' : fullName,
-                    style: const TextStyle(fontWeight: FontWeight.w800),
-                  ),
-                  subtitle: Text(sub),
-                  leading: const Icon(Icons.person_rounded),
-                );
-              }).toList(),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _RoomsBedsTab extends StatelessWidget {
-  final Map<String, dynamic> data;
-  const _RoomsBedsTab({required this.data});
-
-  List<Map<String, dynamic>> _asList(dynamic v) {
-    if (v is List) {
-      return v.whereType<Map>().map((e) => e.cast<String, dynamic>()).toList();
-    }
-    return const [];
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final rooms = _asList(data['rooms']);
-
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
-      children: [
-        if (rooms.isEmpty)
-          const Padding(
-            padding: EdgeInsets.only(top: 60),
-            child: Center(child: Text('لا توجد غرف/أسرة لهذا القسم')),
-          )
-        else
-          ...rooms.map((r) => _roomCard(context, r)).toList(),
-      ],
-    );
-  }
-
-  Widget _roomCard(BuildContext context, Map<String, dynamic> r) {
-    final theme = Theme.of(context);
-
+  Widget _roomTile(Map<String, dynamic> r) {
+    final id = (r['id'] ?? '').toString();
     final code = (r['code'] ?? '').toString();
     final name = (r['name'] ?? '').toString();
     final floor = r['floor'];
+    final isActive = (r['is_active'] ?? r['isActive'] ?? true) == true;
 
-    final beds = _asList(r['beds']);
+    final floorText = (floor == null) ? '' : ' • طابق: ${floor.toString()}';
 
     return Card(
-      margin: const EdgeInsets.only(bottom: 12),
+      margin: const EdgeInsets.only(bottom: 10),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.meeting_room_rounded),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    name.isNotEmpty
-                        ? '$name  (${code.isEmpty ? '-' : code})'
-                        : (code.isEmpty ? 'Room' : code),
-                    style: const TextStyle(fontWeight: FontWeight.w900),
-                  ),
-                ),
-                if (floor != null) Text('طابق: $floor'),
-              ],
+      child: ListTile(
+        onTap: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) =>
+                  AdminRoomBedsPage(roomId: id, roomCode: code, roomName: name),
             ),
-            const SizedBox(height: 10),
-            ...beds.map((b) {
-              final bedCode = (b['code'] ?? '').toString();
-              final status = (b['status'] ?? '').toString();
-
-              final occupant = (b['occupant'] is Map)
-                  ? (b['occupant'] as Map).cast<String, dynamic>()
-                  : null;
-              final patientName =
-                  occupant?['patientFullName']?.toString() ?? '';
-              final patientPhone = occupant?['patientPhone']?.toString() ?? '';
-
-              final hasPatient =
-                  occupant != null && patientName.trim().isNotEmpty;
-
-              return Container(
-                margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: theme.dividerColor.withAlpha(40)),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.bed_rounded),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            bedCode.isEmpty ? '-' : bedCode,
-                            style: const TextStyle(fontWeight: FontWeight.w900),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            hasPatient
-                                ? (patientPhone.isNotEmpty
-                                      ? '$patientName — $patientPhone'
-                                      : patientName)
-                                : 'لا يوجد مريض على السرير',
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    _statusChip(status),
-                  ],
-                ),
-              );
-            }).toList(),
+          );
+        },
+        leading: CircleAvatar(
+          backgroundColor: Theme.of(context).colorScheme.primary.withAlpha(18),
+          child: Icon(
+            Icons.meeting_room_rounded,
+            color: Theme.of(context).colorScheme.primary,
+          ),
+        ),
+        title: Text(
+          name.isEmpty ? (code.isEmpty ? 'غرفة' : code) : name,
+          style: const TextStyle(fontWeight: FontWeight.w900),
+        ),
+        subtitle: Text(
+          '${code.isEmpty ? '' : code}${floorText}',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _statusPill(isActive ? 'ACTIVE' : 'INACTIVE'),
+            const SizedBox(width: 8),
+            const Icon(Icons.chevron_right_rounded),
           ],
         ),
       ),
     );
   }
 
-  Widget _statusChip(String status) {
-    final s = status.trim().isEmpty ? '—' : status.trim();
-    return Chip(
-      label: Text(s, style: const TextStyle(fontWeight: FontWeight.w800)),
+  Widget _statusPill(String text) {
+    final theme = Theme.of(context);
+    final isOk = text == 'ACTIVE';
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: (isOk ? theme.colorScheme.primary : theme.colorScheme.error)
+              .withAlpha(60),
+        ),
+        color: (isOk ? theme.colorScheme.primary : theme.colorScheme.error)
+            .withAlpha(10),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontWeight: FontWeight.w800,
+          fontSize: 12,
+          color: isOk ? theme.colorScheme.primary : theme.colorScheme.error,
+        ),
+      ),
     );
   }
-}
 
-class _ErrorBox extends StatelessWidget {
-  final String msg;
-  final VoidCallback onRetry;
-  const _ErrorBox({required this.msg, required this.onRetry});
-
-  @override
-  Widget build(BuildContext context) {
+  Widget _errorBox(String msg, {required VoidCallback onRetry}) {
     final theme = Theme.of(context);
-    return Center(
-      child: Column(
-        children: [
-          Icon(
-            Icons.error_outline_rounded,
-            size: 42,
-            color: theme.colorScheme.error,
-          ),
-          const SizedBox(height: 10),
-          Text(msg, textAlign: TextAlign.center),
-          const SizedBox(height: 12),
-          FilledButton.icon(
-            onPressed: onRetry,
-            icon: const Icon(Icons.refresh_rounded),
-            label: const Text('إعادة المحاولة'),
-          ),
-        ],
+    return Padding(
+      padding: const EdgeInsets.only(top: 30),
+      child: Center(
+        child: Column(
+          children: [
+            Icon(
+              Icons.error_outline_rounded,
+              size: 42,
+              color: theme.colorScheme.error,
+            ),
+            const SizedBox(height: 10),
+            Text(msg, textAlign: TextAlign.center),
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              onPressed: onRetry,
+              icon: const Icon(Icons.refresh_rounded),
+              label: const Text('إعادة المحاولة'),
+            ),
+          ],
+        ),
       ),
     );
   }

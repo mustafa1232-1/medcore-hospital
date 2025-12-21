@@ -3,6 +3,9 @@ import '../../../../core/shell/v2_shell_scaffold.dart';
 import '../../../orders/data/api/departments_api_service_v2.dart';
 import 'admin_create_department_page.dart';
 
+// ✅ NEW: details page
+import 'admin_department_details_page.dart';
+
 class AdminDepartmentsPage extends StatefulWidget {
   const AdminDepartmentsPage({super.key});
 
@@ -193,6 +196,18 @@ class _AdminDepartmentsPageState extends State<AdminDepartmentsPage> {
       margin: const EdgeInsets.only(bottom: 10),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
       child: ListTile(
+        // ✅ NEW: enter department details
+        onTap: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => AdminDepartmentDetailsPage(
+                departmentId: id,
+                departmentName: name,
+                departmentCode: code,
+              ),
+            ),
+          );
+        },
         title: Text(
           name.isEmpty ? '-' : name,
           style: const TextStyle(fontWeight: FontWeight.w900),

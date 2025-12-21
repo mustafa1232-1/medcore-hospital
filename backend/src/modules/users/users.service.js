@@ -101,7 +101,7 @@ async function listUsers({ tenantId, q, active, limit = 50, offset = 0 }) {
       u.is_active AS "isActive",
       u.created_at AS "createdAt",
 
-      -- ✅ NEW
+      -- ✅ department fields
       u.department_id AS "departmentId",
       d.name AS "departmentName",
       d.code AS "departmentCode"
@@ -122,15 +122,17 @@ async function listUsers({ tenantId, q, active, limit = 50, offset = 0 }) {
   let rolesMap = new Map();
 
   if (ids.length) {
+    // ✅ IMPORTANT: tenant-scope roles to avoid cross-tenant leakage
     const rolesQ = await pool.query(
       `
       SELECT ur.user_id, r.name
       FROM user_roles ur
       JOIN roles r ON r.id = ur.role_id
       WHERE ur.user_id = ANY($1::uuid[])
+        AND r.tenant_id = $2
       ORDER BY r.name
       `,
-      [ids]
+      [ids, tenantId]
     );
 
     rolesMap = new Map();
@@ -202,15 +204,17 @@ async function createUser({ tenantId, fullName, email, phone, password, roles, d
       );
     }
 
+    // ✅ tenant-scope roles for safety
     const rolesQ = await client.query(
       `
       SELECT r.name
       FROM user_roles ur
       JOIN roles r ON r.id = ur.role_id
       WHERE ur.user_id = $1
+        AND r.tenant_id = $2
       ORDER BY r.name
       `,
-      [user.id]
+      [user.id, tenantId]
     );
 
     await client.query('COMMIT');
@@ -256,15 +260,17 @@ async function setUserActive({ tenantId, userId, isActive }) {
 
   const user = rows[0];
 
+  // ✅ tenant-scope roles for safety
   const rolesQ = await pool.query(
     `
     SELECT r.name
     FROM user_roles ur
     JOIN roles r ON r.id = ur.role_id
     WHERE ur.user_id = $1
+      AND r.tenant_id = $2
     ORDER BY r.name
     `,
-    [user.id]
+    [user.id, tenantId]
   );
 
   return { ...user, roles: rolesQ.rows.map((r) => r.name) };

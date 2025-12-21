@@ -9,6 +9,10 @@ const {
   createDepartmentSchema,
   updateDepartmentSchema,
   activateDepartmentSchema,
+
+  // ✅ NEW
+  transferStaffSchema,
+  removeStaffSchema,
 } = require('./departments.validators');
 
 const router = express.Router();
@@ -18,7 +22,7 @@ const router = express.Router();
 // =========================
 router.get('/', requireAuth, requirePermission('facility.read'), ctrl.list);
 
-// ✅ NEW: Department Overview (staff + rooms + beds + occupancy)
+// ✅ Department Overview (staff + rooms + beds + occupancy)
 router.get(
   '/:id/overview',
   requireAuth,
@@ -27,6 +31,27 @@ router.get(
 );
 
 router.get('/:id', requireAuth, requirePermission('facility.read'), ctrl.getOne);
+
+// =========================
+// ✅ NEW: Staff management inside department
+// - ADMIN: can transfer/remove anyone
+// - DOCTOR: can transfer/remove NURSE only, cannot change self, cannot move doctors
+// =========================
+router.post(
+  '/:id/staff/transfer',
+  requireAuth,
+  requirePermission('facility.write'),
+  validateBody(transferStaffSchema),
+  ctrl.transferStaff
+);
+
+router.post(
+  '/:id/staff/remove',
+  requireAuth,
+  requirePermission('facility.write'),
+  validateBody(removeStaffSchema),
+  ctrl.removeStaff
+);
 
 // =========================
 // Create (manual – legacy / optional)
@@ -41,10 +66,6 @@ router.post(
 
 // =========================
 // Activate from system catalog (PRIMARY)
-// default:
-// - roomsCount = 1
-// - bedsPerRoom = 1
-// user can change both freely
 // =========================
 router.post(
   '/activate',

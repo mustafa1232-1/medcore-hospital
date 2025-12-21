@@ -5,6 +5,14 @@ function tenantId(req) {
   return req.user.tenantId;
 }
 
+function actor(req) {
+  return {
+    userId: req.user?.sub,
+    tenantId: req.user?.tenantId,
+    roles: Array.isArray(req.user?.roles) ? req.user.roles : [],
+  };
+}
+
 async function create(req, res, next) {
   try {
     const dep = await svc.createDepartment({
@@ -86,7 +94,7 @@ async function activate(req, res, next) {
   }
 }
 
-// ✅ NEW: overview endpoint
+// ✅ Overview endpoint
 async function overview(req, res, next) {
   try {
     const data = await svc.getDepartmentOverview({
@@ -94,6 +102,37 @@ async function overview(req, res, next) {
       departmentId: req.params.id,
     });
     res.json({ ok: true, data });
+  } catch (e) {
+    next(e);
+  }
+}
+
+// ✅ NEW: transfer staff
+async function transferStaff(req, res, next) {
+  try {
+    const result = await svc.transferStaffBetweenDepartments({
+      tenantId: tenantId(req),
+      fromDepartmentId: req.params.id,
+      staffUserId: req.body.staffUserId,
+      toDepartmentId: req.body.toDepartmentId,
+      actor: actor(req),
+    });
+    res.json({ ok: true, data: result });
+  } catch (e) {
+    next(e);
+  }
+}
+
+// ✅ NEW: remove staff
+async function removeStaff(req, res, next) {
+  try {
+    const result = await svc.removeStaffFromDepartment({
+      tenantId: tenantId(req),
+      departmentId: req.params.id,
+      staffUserId: req.body.staffUserId,
+      actor: actor(req),
+    });
+    res.json({ ok: true, data: result });
   } catch (e) {
     next(e);
   }
@@ -107,4 +146,8 @@ module.exports = {
   remove,
   activate,
   overview,
+
+  // ✅ new
+  transferStaff,
+  removeStaff,
 };
