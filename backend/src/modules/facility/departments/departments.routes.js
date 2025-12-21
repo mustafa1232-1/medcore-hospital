@@ -1,3 +1,4 @@
+// src/modules/facility/departments/departments.routes.js
 const express = require('express');
 const { requireAuth } = require('../../../middlewares/auth');
 const { requirePermission } = require('../../../utils/requirePermission');
@@ -15,19 +16,17 @@ const router = express.Router();
 // =========================
 // Read
 // =========================
+router.get('/', requireAuth, requirePermission('facility.read'), ctrl.list);
+
+// ✅ NEW: Department Overview (staff + rooms + beds + occupancy)
 router.get(
-  '/',
+  '/:id/overview',
   requireAuth,
   requirePermission('facility.read'),
-  ctrl.list
+  ctrl.overview
 );
 
-router.get(
-  '/:id',
-  requireAuth,
-  requirePermission('facility.read'),
-  ctrl.getOne
-);
+router.get('/:id', requireAuth, requirePermission('facility.read'), ctrl.getOne);
 
 // =========================
 // Create (manual – legacy / optional)

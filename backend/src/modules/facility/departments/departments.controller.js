@@ -1,3 +1,4 @@
+// src/modules/facility/departments/departments.controller.js
 const svc = require('./departments.service');
 
 function tenantId(req) {
@@ -70,7 +71,7 @@ async function remove(req, res, next) {
   }
 }
 
-// ✅ NEW
+// ✅ Activate department from system catalog
 async function activate(req, res, next) {
   try {
     const dep = await svc.activateDepartmentFromSystemCatalog({
@@ -85,6 +86,19 @@ async function activate(req, res, next) {
   }
 }
 
+// ✅ NEW: overview endpoint
+async function overview(req, res, next) {
+  try {
+    const data = await svc.getDepartmentOverview({
+      tenantId: tenantId(req),
+      departmentId: req.params.id,
+    });
+    res.json({ ok: true, data });
+  } catch (e) {
+    next(e);
+  }
+}
+
 module.exports = {
   create,
   list,
@@ -92,4 +106,5 @@ module.exports = {
   update,
   remove,
   activate,
+  overview,
 };

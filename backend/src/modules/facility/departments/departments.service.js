@@ -1,3 +1,4 @@
+// src/modules/facility/departments/departments.service.js
 const pool = require('../../../db/pool');
 const { HttpError } = require('../../../utils/httpError');
 
@@ -14,6 +15,12 @@ function slugify(input) {
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '');
   return s || 'DEP';
+}
+
+function toPosInt(v, def = 1) {
+  const n = Number.parseInt(String(v ?? ''), 10);
+  if (Number.isFinite(n) && n >= 1) return n;
+  return def;
 }
 
 async function getTenantCode(tenantId) {
@@ -42,8 +49,8 @@ async function generateDepartmentCode({ tenantId, name }) {
 
 async function createDepartment({ tenantId, code, name, isActive }) {
   const finalCode =
-    code && code.trim()
-      ? code.trim()
+    code && String(code).trim()
+      ? String(code).trim()
       : await generateDepartmentCode({ tenantId, name });
 
   try {
@@ -77,7 +84,8 @@ async function listDepartments({ tenantId, q, active }) {
   }
 
   const { rows } = await pool.query(
-    `SELECT id, tenant_id, code, name, is_active, created_at
+    `SELECT id, tenant_id, code, name, is_active, created_at,
+            system_department_id, rooms_count, beds_per_room
      FROM departments
      WHERE ${where}
      ORDER BY name ASC`,
@@ -88,7 +96,10 @@ async function listDepartments({ tenantId, q, active }) {
 
 async function getDepartment({ tenantId, id }) {
   const { rows } = await pool.query(
-    `SELECT * FROM departments WHERE tenant_id = $1 AND id = $2`,
+    `SELECT id, tenant_id, code, name, is_active, created_at,
+            system_department_id, rooms_count, beds_per_room
+     FROM departments
+     WHERE tenant_id = $1 AND id = $2`,
     [tenantId, id]
   );
   if (!rows[0]) throw new HttpError(404, 'Department not found');
@@ -122,7 +133,8 @@ async function updateDepartment({ tenantId, id, patch }) {
       `UPDATE departments
        SET ${set.join(', ')}
        WHERE tenant_id = $1 AND id = $2
-       RETURNING *`,
+       RETURNING id, tenant_id, code, name, is_active, created_at,
+                 system_department_id, rooms_count, beds_per_room`,
       values
     );
     return rows[0];
@@ -140,19 +152,23 @@ async function softDeleteDepartment({ tenantId, id }) {
     `UPDATE departments
      SET is_active = false
      WHERE tenant_id = $1 AND id = $2
-     RETURNING *`,
+     RETURNING id, tenant_id, code, name, is_active, created_at,
+               system_department_id, rooms_count, beds_per_room`,
     [tenantId, id]
   );
   return rows[0];
 }
 
-// ✅ NEW: activate department + auto create rooms & beds
+// ✅ Activate department + auto create rooms & beds (with defaults)
 async function activateDepartmentFromSystemCatalog({
   tenantId,
   systemDepartmentId,
   roomsCount,
   bedsPerRoom,
 }) {
+  const rc = toPosInt(roomsCount, 1);
+  const br = toPosInt(bedsPerRoom, 1);
+
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -179,36 +195,40 @@ async function activateDepartmentFromSystemCatalog({
 
     const depQ = await client.query(
       `INSERT INTO departments
-       (tenant_id, system_department_id, code, name, rooms_count, beds_per_room)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING id, code, name`,
+       (tenant_id, system_department_id, code, name, rooms_count, beds_per_room, is_active, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, true, now())
+       RETURNING id, tenant_id, code, name, is_active,
+                 system_department_id, rooms_count, beds_per_room, created_at`,
       [
         tenantId,
         systemDepartmentId,
-        sys.rows[0].code,
+        String(sys.rows[0].code).toUpperCase().trim(),
         sys.rows[0].name_ar,
-        roomsCount,
-        bedsPerRoom,
+        rc,
+        br,
       ]
     );
 
     const dep = depQ.rows[0];
 
-    for (let r = 1; r <= roomsCount; r++) {
+    for (let r = 1; r <= rc; r++) {
       const roomCode = `${dep.code}-R${String(r).padStart(2, '0')}`;
-      const room = await client.query(
-        `INSERT INTO rooms (tenant_id, department_id, code, name)
-         VALUES ($1, $2, $3, $4)
+
+      const roomQ = await client.query(
+        `INSERT INTO rooms (tenant_id, department_id, code, name, is_active, created_at)
+         VALUES ($1, $2, $3, $4, true, now())
          RETURNING id`,
         [tenantId, dep.id, roomCode, `Room ${r}`]
       );
 
-      for (let b = 1; b <= bedsPerRoom; b++) {
+      const roomId = roomQ.rows[0].id;
+
+      for (let b = 1; b <= br; b++) {
         const bedCode = `${roomCode}-B${String(b).padStart(2, '0')}`;
         await client.query(
-          `INSERT INTO beds (tenant_id, room_id, code)
-           VALUES ($1, $2, $3)`,
-          [tenantId, room.rows[0].id, bedCode]
+          `INSERT INTO beds (tenant_id, room_id, code, status, is_active, created_at)
+           VALUES ($1, $2, $3, 'AVAILABLE'::bed_status, true, now())`,
+          [tenantId, roomId, bedCode]
         );
       }
     }
@@ -223,6 +243,131 @@ async function activateDepartmentFromSystemCatalog({
   }
 }
 
+// =======================
+// ✅ NEW: Department Overview
+// =======================
+async function listStaffByRole({ tenantId, departmentId, roleName }) {
+  const roleUpper = String(roleName || '').toUpperCase().trim();
+
+  const { rows } = await pool.query(
+    `
+    SELECT
+      u.id,
+      u.full_name AS "fullName",
+      u.staff_code AS "staffCode",
+      u.email,
+      u.phone
+    FROM users u
+    WHERE u.tenant_id = $1
+      AND u.is_active = true
+      AND u.department_id = $2
+      AND EXISTS (
+        SELECT 1
+        FROM user_roles ur
+        JOIN roles r ON r.id = ur.role_id
+        WHERE ur.user_id = u.id
+          AND UPPER(r.name) = $3
+      )
+    ORDER BY u.full_name ASC
+    `,
+    [tenantId, departmentId, roleUpper]
+  );
+
+  return rows;
+}
+
+async function listRoomsBedsOccupancy({ tenantId, departmentId }) {
+  const { rows } = await pool.query(
+    `
+    SELECT
+      r.id AS "roomId",
+      r.code AS "roomCode",
+      r.name AS "roomName",
+      r.floor AS "roomFloor",
+
+      b.id AS "bedId",
+      b.code AS "bedCode",
+      b.status AS "bedStatus",
+
+      a.id AS "admissionId",
+      a.status AS "admissionStatus",
+
+      p.id AS "patientId",
+      p.full_name AS "patientFullName",
+      p.phone AS "patientPhone"
+    FROM rooms r
+    JOIN beds b
+      ON b.room_id = r.id
+      AND b.tenant_id = $1
+      AND b.is_active = true
+    LEFT JOIN admission_beds ab
+      ON ab.bed_id = b.id
+      AND ab.tenant_id = $1
+      AND ab.is_active = true
+    LEFT JOIN admissions a
+      ON a.id = ab.admission_id
+      AND a.tenant_id = $1
+      AND a.status IN ('ACTIVE', 'PENDING')
+    LEFT JOIN patients p
+      ON p.id = a.patient_id
+      AND p.tenant_id = $1
+    WHERE r.tenant_id = $1
+      AND r.department_id = $2
+      AND r.is_active = true
+    ORDER BY r.code ASC, b.code ASC
+    `,
+    [tenantId, departmentId]
+  );
+
+  const map = new Map();
+
+  for (const x of rows) {
+    if (!map.has(x.roomId)) {
+      map.set(x.roomId, {
+        id: x.roomId,
+        code: x.roomCode,
+        name: x.roomName,
+        floor: x.roomFloor,
+        beds: [],
+      });
+    }
+
+    const room = map.get(x.roomId);
+    room.beds.push({
+      id: x.bedId,
+      code: x.bedCode,
+      status: x.bedStatus,
+      occupant: x.patientId
+        ? {
+            admissionId: x.admissionId,
+            admissionStatus: x.admissionStatus,
+            patientId: x.patientId,
+            patientFullName: x.patientFullName,
+            patientPhone: x.patientPhone,
+          }
+        : null,
+    });
+  }
+
+  return Array.from(map.values());
+}
+
+async function getDepartmentOverview({ tenantId, departmentId }) {
+  const dep = await getDepartment({ tenantId, id: departmentId });
+
+  const [doctors, nurses, rooms] = await Promise.all([
+    listStaffByRole({ tenantId, departmentId, roleName: 'DOCTOR' }),
+    listStaffByRole({ tenantId, departmentId, roleName: 'NURSE' }),
+    listRoomsBedsOccupancy({ tenantId, departmentId }),
+  ]);
+
+  return {
+    department: dep,
+    staff: { doctors, nurses },
+    rooms,
+  };
+}
+
 module.exports = {
   createDepartment,
   listDepartments,
@@ -230,4 +375,7 @@ module.exports = {
   updateDepartment,
   softDeleteDepartment,
   activateDepartmentFromSystemCatalog,
+
+  // ✅ new
+  getDepartmentOverview,
 };

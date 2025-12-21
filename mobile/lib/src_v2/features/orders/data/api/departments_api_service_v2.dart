@@ -1,3 +1,4 @@
+// lib/src_v2/features/orders/data/api/departments_api_service_v2.dart
 import 'package:dio/dio.dart';
 import 'package:mobile/src/core/api/api_client.dart';
 
@@ -47,8 +48,7 @@ class DepartmentsApiServiceV2 {
     return _asListOfMap(res.data);
   }
 
-  /// ❌ لا يُستخدم مباشرة بعد الآن
-  /// (أبقيناه فقط للتوافق إن كان مستعملًا في مكان آخر)
+  /// ❌ legacy manual create (keep)
   Future<Map<String, dynamic>> createDepartment({
     String? code,
     required String name,
@@ -69,8 +69,9 @@ class DepartmentsApiServiceV2 {
     return data;
   }
 
-  /// ✅ المرحلة 2 (المهم)
+  /// ✅ المرحلة 2
   /// POST /api/facility/departments/activate
+  /// roomsCount / bedsPerRoom defaults are 1 on backend, we also default here.
   Future<Map<String, dynamic>> activateDepartment({
     required String systemDepartmentId,
     int roomsCount = 1,
@@ -85,6 +86,16 @@ class DepartmentsApiServiceV2 {
       },
     );
 
+    final data = _asMap(res.data);
+    final d = data['data'];
+    if (d is Map) return d.cast<String, dynamic>();
+    return data;
+  }
+
+  /// ✅ NEW: overview
+  /// GET /api/facility/departments/:id/overview
+  Future<Map<String, dynamic>> getDepartmentOverview(String id) async {
+    final res = await _dio.get('/api/facility/departments/$id/overview');
     final data = _asMap(res.data);
     final d = data['data'];
     if (d is Map) return d.cast<String, dynamic>();
