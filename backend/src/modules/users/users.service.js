@@ -99,8 +99,18 @@ async function listUsers({ tenantId, q, active, limit = 50, offset = 0 }) {
       u.email,
       u.phone,
       u.is_active AS "isActive",
-      u.created_at AS "createdAt"
+      u.created_at AS "createdAt",
+
+      -- ✅ NEW
+      u.department_id AS "departmentId",
+      d.name AS "departmentName",
+      d.code AS "departmentCode"
+
     FROM users u
+    LEFT JOIN departments d
+      ON d.id = u.department_id
+     AND d.tenant_id = u.tenant_id
+
     ${where}
     ORDER BY u.created_at DESC
     LIMIT $${params.length - 1} OFFSET $${params.length}
@@ -137,18 +147,32 @@ async function listUsers({ tenantId, q, active, limit = 50, offset = 0 }) {
   }));
 }
 
-async function createUser({ tenantId, fullName, email, phone, password, roles }) {
+// ✅ UPDATED: accepts departmentId
+async function createUser({ tenantId, fullName, email, phone, password, roles, departmentId }) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+
+    // ✅ Optional but important: ensure department belongs to same tenant
+    if (departmentId) {
+      const dep = await client.query(
+        `SELECT 1 FROM departments WHERE id = $1 AND tenant_id = $2 LIMIT 1`,
+        [departmentId, tenantId]
+      );
+      if (dep.rowCount === 0) {
+        const err = new Error('Invalid departmentId');
+        err.status = 400;
+        throw err;
+      }
+    }
 
     const passwordHash = await bcrypt.hash(password, 10);
     const staffCode = await generateUniqueStaffCode(client, tenantId, fullName);
 
     const { rows: uRows } = await client.query(
       `
-      INSERT INTO users (id, tenant_id, staff_code, full_name, email, phone, password_hash, is_active, created_at)
-      VALUES (uuid_generate_v4(), $1, $2, $3, $4, $5, $6, true, now())
+      INSERT INTO users (id, tenant_id, staff_code, full_name, email, phone, password_hash, is_active, created_at, department_id)
+      VALUES (uuid_generate_v4(), $1, $2, $3, $4, $5, $6, true, now(), $7)
       RETURNING
         id,
         staff_code AS "staffCode",
@@ -157,9 +181,10 @@ async function createUser({ tenantId, fullName, email, phone, password, roles })
         email,
         phone,
         is_active AS "isActive",
-        created_at AS "createdAt"
+        created_at AS "createdAt",
+        department_id AS "departmentId"
       `,
-      [tenantId, staffCode, fullName, email || null, phone || null, passwordHash]
+      [tenantId, staffCode, fullName, email || null, phone || null, passwordHash, departmentId || null]
     );
 
     const user = uRows[0];

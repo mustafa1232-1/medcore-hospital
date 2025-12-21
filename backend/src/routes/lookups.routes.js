@@ -160,5 +160,36 @@ router.get('/staff', requireAuth, async (req, res, next) => {
     next(err);
   }
 });
+// ✅ Departments lookup
+router.get('/departments', requireAuth, async (req, res, next) => {
+  try {
+    const tenantId = req.user?.tenantId;
+    const q = String(req.query.q || '').trim();
+
+    const params = [tenantId];
+    let where = `WHERE tenant_id = $1 AND is_active = true`;
+
+    if (q) {
+      params.push(`%${q}%`);
+      const p = `$${params.length}`;
+      where += ` AND (name ILIKE ${p} OR code ILIKE ${p})`;
+    }
+
+    const { rows } = await pool.query(
+      `
+      SELECT id, code, name
+      FROM departments
+      ${where}
+      ORDER BY name ASC
+      LIMIT 100
+      `,
+      params
+    );
+
+    return res.json({ ok: true, items: rows });
+  } catch (e) {
+    return next(e);
+  }
+});
 
 module.exports = router;
