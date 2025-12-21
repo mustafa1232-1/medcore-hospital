@@ -11,7 +11,10 @@ const BedStatus = [
 
 const createBedSchema = Joi.object({
   roomId: Joi.string().uuid().required(),
-  code: Joi.string().trim().min(2).max(80).required(),
+
+  // ✅ أصبح اختياري: إذا لم يُرسل سنولده في service
+  code: Joi.string().trim().min(2).max(80).optional().allow(null, ''),
+
   status: Joi.string().valid(...BedStatus).default('AVAILABLE'),
   notes: Joi.string().allow('', null).max(500).default(null),
   isActive: Joi.boolean().default(true),

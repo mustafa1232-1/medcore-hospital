@@ -132,5 +132,22 @@
   "create_user_password": "كلمة المرور",
   "create_user_roles": "الأدوار",
   "create_user_submit": "إنشاء",
-  "create_user_success": "تم إنشاء المستخدم بنجاح"
+  "create_user_success": "تم إنشاء المستخدم بنجاح",
+
+  "home_quick_new_patient": "مريض جديد",
+  "home_quick_new_patient_sub": "تسجيل مريض",
+  "home_quick_visit_admit": "زيارة / تنويم",
+  "home_quick_visit_admit_sub": "فتح ملف",
+  "home_quick_lab_order": "طلب مختبر",
+  "home_quick_lab_order_sub": "تحاليل",
+  "home_quick_prescription": "وصفة دوائية",
+  "home_quick_prescription_sub": "صرف",
+
+  "home_modules_title": "الأقسام",
+  "home_module_staff_sub": "المستخدمون، الأدوار، الصلاحيات",
+  "home_module_lab_sub": "الطلبات والنتائج",
+  "home_module_pharmacy_sub": "الوصفات والصرف",
+  "home_module_inventory_sub": "الأصناف، المخزون، الصلاحية",
+
+  "common_soon": "قريباً"
 }

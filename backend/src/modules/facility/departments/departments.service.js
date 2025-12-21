@@ -5,13 +5,52 @@ function isUniqueViolation(e) {
   return e && e.code === '23505';
 }
 
+// ---- helpers
+function slugify(input) {
+  const s = String(input || '')
+    .trim()
+    .toUpperCase()
+    .replace(/[\u0600-\u06FF]/g, '') // إزالة العربية من الكود (اختياري) لتوحيد الأكواد
+    .replace(/[^A-Z0-9]+/g, '-')     // غير الحروف/الأرقام إلى "-"
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+
+  return s || 'DEP';
+}
+
+async function getTenantCode(tenantId) {
+  const { rows } = await pool.query(`SELECT code FROM tenants WHERE id = $1 LIMIT 1`, [tenantId]);
+  const code = rows[0]?.code;
+  return (code ? String(code).toUpperCase().trim() : 'TENANT');
+}
+
+async function generateDepartmentCode({ tenantId, name }) {
+  const tenantCode = await getTenantCode(tenantId);
+  const base = `${tenantCode}-DEP-${slugify(name).slice(0, 20)}`;
+
+  // جرّب base ثم base-2 base-3...
+  for (let n = 0; n < 50; n++) {
+    const code = n === 0 ? base : `${base}-${n + 1}`;
+    const { rows } = await pool.query(
+      `SELECT 1 FROM departments WHERE tenant_id = $1 AND code = $2 LIMIT 1`,
+      [tenantId, code]
+    );
+    if (!rows[0]) return code;
+  }
+  // fallback نادر
+  return `${base}-${Date.now()}`;
+}
+
+// ---- main
 async function createDepartment({ tenantId, code, name, isActive }) {
+  const finalCode = (code && String(code).trim()) ? String(code).trim() : await generateDepartmentCode({ tenantId, name });
+
   try {
     const { rows } = await pool.query(
       `INSERT INTO departments (tenant_id, code, name, is_active)
        VALUES ($1, $2, $3, $4)
        RETURNING id, tenant_id, code, name, is_active, created_at`,
-      [tenantId, code, name, isActive]
+      [tenantId, finalCode, name, isActive]
     );
     return rows[0];
   } catch (e) {

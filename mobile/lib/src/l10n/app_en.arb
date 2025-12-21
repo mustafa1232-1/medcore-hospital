@@ -132,5 +132,22 @@
   "create_user_password": "Password",
   "create_user_roles": "Roles",
   "create_user_submit": "Create",
-  "create_user_success": "User created successfully"
+  "create_user_success": "User created successfully",
+
+  "home_quick_new_patient": "New patient",
+  "home_quick_new_patient_sub": "Register patient",
+  "home_quick_visit_admit": "Visit / Admit",
+  "home_quick_visit_admit_sub": "Open file",
+  "home_quick_lab_order": "Lab order",
+  "home_quick_lab_order_sub": "Tests",
+  "home_quick_prescription": "Prescription",
+  "home_quick_prescription_sub": "Dispense",
+
+  "home_modules_title": "Modules",
+  "home_module_staff_sub": "Users, roles, permissions",
+  "home_module_lab_sub": "Orders & results",
+  "home_module_pharmacy_sub": "Prescriptions & dispensing",
+  "home_module_inventory_sub": "Items, stock, expiry",
+
+  "common_soon": "Soon"
 }

@@ -1,7 +1,8 @@
 const Joi = require('joi');
 
 const createDepartmentSchema = Joi.object({
-  code: Joi.string().trim().min(2).max(50).required(),
+  // ✅ أصبح اختياري: إذا لم يُرسل سنولده في service
+  code: Joi.string().trim().min(2).max(50).optional().allow(null, ''),
   name: Joi.string().trim().min(2).max(120).required(),
   isActive: Joi.boolean().default(true),
 });

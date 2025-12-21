@@ -49,24 +49,22 @@ class _AccountPageState extends State<AccountPage> {
     final auth = context.watch<AuthStore>();
     final user = auth.user;
 
-    if (user == null) return Center(child: Text(t.account_noData));
+    if (user == null) {
+      return Center(child: Text(t.account_noData));
+    }
 
     final fullName = (user['fullName'] ?? '-').toString();
     final email = (user['email'] ?? '').toString();
     final phone = (user['phone'] ?? '').toString();
 
-    // backend fields
     final tenantId = (user['tenantId'] ?? '').toString();
-    final tenantCode = (user['tenantCode'] ?? '')
-        .toString(); // if you later return it
-    final staffCode = (user['staffCode'] ?? '').toString(); // NEW
-    final userId = (user['id'] ?? '')
-        .toString(); // internal uuid (we will not show unless needed)
+    final tenantCode = (user['tenantCode'] ?? '').toString();
+    final staffCode = (user['staffCode'] ?? '').toString();
+    final userId = (user['id'] ?? '').toString();
 
     final roles =
         (user['roles'] as List?)?.map((e) => e.toString()).toList() ?? const [];
 
-    // show facility code:
     final facilityCodeToShow = tenantCode.isNotEmpty ? tenantCode : tenantId;
 
     return ListView(
@@ -185,24 +183,23 @@ class _AccountPageState extends State<AccountPage> {
             ),
           ),
         ),
+
         const SizedBox(height: 12),
 
         _InfoCard(
           title: t.account_info,
           items: [
             if (email.isNotEmpty)
-              _kvRow('Email', email, onCopy: () => _copy(email)),
+              _kvRow(t.login_email, email, onCopy: () => _copy(email)),
             if (phone.isNotEmpty)
-              _kvRow('Phone', phone, onCopy: () => _copy(phone)),
+              _kvRow(t.login_phone, phone, onCopy: () => _copy(phone)),
 
-            // ✅ clearer than "Tenant"
             _kvRow(
               t.facility_code,
               facilityCodeToShow,
               onCopy: () => _copy(facilityCodeToShow),
             ),
 
-            // ✅ staff code for users
             if (staffCode.isNotEmpty)
               _kvRow(t.staff_id, staffCode, onCopy: () => _copy(staffCode))
             else if (userId.isNotEmpty)

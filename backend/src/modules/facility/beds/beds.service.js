@@ -14,22 +14,71 @@ const allowedTransitions = {
   OUT_OF_SERVICE: new Set(['AVAILABLE', 'MAINTENANCE']),
 };
 
+function pad2(n) {
+  return String(n).padStart(2, '0');
+}
+
 async function ensureRoom({ tenantId, roomId }) {
   const { rows } = await pool.query(
-    `SELECT id FROM rooms WHERE tenant_id = $1 AND id = $2 AND is_active = true`,
+    `SELECT id, code FROM rooms WHERE tenant_id = $1 AND id = $2 AND is_active = true`,
     [tenantId, roomId]
   );
   if (!rows[0]) throw new HttpError(400, 'Invalid roomId');
+  return rows[0]; // { id, code }
+}
+
+async function generateBedCode({ tenantId, roomId }) {
+  const room = await ensureRoom({ tenantId, roomId });
+  const roomCode = String(room.code).toUpperCase().trim();
+  const base = `${roomCode}-B`;
+
+  const { rows } = await pool.query(
+    `
+    SELECT code
+    FROM beds
+    WHERE tenant_id = $1 AND room_id = $2
+      AND code LIKE $3
+    ORDER BY created_at DESC
+    LIMIT 300
+    `,
+    [tenantId, roomId, `${base}%`]
+  );
+
+  let max = 0;
+  for (const r of rows) {
+    const c = String(r.code || '');
+    const m = c.match(/-B(\d{2,})$/);
+    if (m) {
+      const v = parseInt(m[1], 10);
+      if (!Number.isNaN(v)) max = Math.max(max, v);
+    }
+  }
+
+  for (let step = 1; step <= 50; step++) {
+    const code = `${base}${pad2(max + step)}`;
+    const ex = await pool.query(
+      `SELECT 1 FROM beds WHERE tenant_id = $1 AND code = $2 LIMIT 1`,
+      [tenantId, code]
+    );
+    if (!ex.rows[0]) return code;
+  }
+
+  return `${base}${Date.now()}`;
 }
 
 async function createBed({ tenantId, roomId, code, status, notes, isActive }) {
   await ensureRoom({ tenantId, roomId });
+
+  const finalCode = (code && String(code).trim())
+    ? String(code).trim()
+    : await generateBedCode({ tenantId, roomId });
+
   try {
     const { rows } = await pool.query(
       `INSERT INTO beds (tenant_id, room_id, code, status, notes, is_active)
        VALUES ($1, $2, $3, $4::bed_status, $5, $6)
        RETURNING id, tenant_id, room_id, code, status, notes, is_active, created_at`,
-      [tenantId, roomId, code, status, notes, isActive]
+      [tenantId, roomId, finalCode, status, notes, isActive]
     );
     return rows[0];
   } catch (e) {
@@ -46,7 +95,6 @@ async function listBeds({ tenantId, roomId, departmentId, status, active }) {
   if (status) { params.push(status); where += ` AND b.status = $${params.length}::bed_status`; }
   if (active !== undefined) { params.push(active); where += ` AND b.is_active = $${params.length}`; }
 
-  // فلترة عبر departmentId تحتاج join على rooms
   let join = `JOIN rooms r ON r.id = b.room_id`;
   if (departmentId) {
     params.push(departmentId);
@@ -120,7 +168,24 @@ async function changeBedStatus({ tenantId, id, nextStatus }) {
     throw new HttpError(409, `Invalid transition: ${current} -> ${nextStatus}`);
   }
 
-  // لاحقاً: سنمنع AVAILABLE إذا كان هناك Encounter/Admission فعّال مرتبط بالسرير.
+  // ✅ منع جعل السرير AVAILABLE إذا كان عليه تعيين فعّال
+  if (nextStatus === 'AVAILABLE') {
+    const activeAssign = await pool.query(
+      `
+      SELECT 1
+      FROM admission_beds ab
+      WHERE ab.tenant_id = $1
+        AND ab.bed_id = $2
+        AND ab.is_active = true
+      LIMIT 1
+      `,
+      [tenantId, id]
+    );
+    if (activeAssign.rows[0]) {
+      throw new HttpError(409, 'لا يمكن جعل السرير AVAILABLE لأنه مرتبط بتنويم فعّال');
+    }
+  }
+
   const { rows } = await pool.query(
     `UPDATE beds
      SET status = $3::bed_status

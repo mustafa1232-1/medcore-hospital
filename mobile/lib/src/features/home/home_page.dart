@@ -28,7 +28,6 @@ class HomePage extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
         children: [
           _HeroCard(
-            // ✅ Brand ثابت (لا يتغير مع اللغة)
             title: _brandName,
             subtitle: t.hospitalFirst,
             leftIcon: Icons.dashboard_rounded,
@@ -46,28 +45,28 @@ class HomePage extends StatelessWidget {
           _QuickActionsGrid(
             actions: [
               _QuickAction(
-                title: 'New patient',
-                subtitle: 'Register patient',
+                title: t.home_quick_new_patient,
+                subtitle: t.home_quick_new_patient_sub,
                 icon: Icons.person_add_alt_1_rounded,
-                onTap: () => _toast(context, 'Soon'),
+                onTap: () => _toast(context, t.common_soon),
               ),
               _QuickAction(
-                title: 'Visit / Admit',
-                subtitle: 'Open file',
+                title: t.home_quick_visit_admit,
+                subtitle: t.home_quick_visit_admit_sub,
                 icon: Icons.assignment_rounded,
-                onTap: () => _toast(context, 'Soon'),
+                onTap: () => _toast(context, t.common_soon),
               ),
               _QuickAction(
-                title: 'Lab order',
-                subtitle: 'Tests',
+                title: t.home_quick_lab_order,
+                subtitle: t.home_quick_lab_order_sub,
                 icon: Icons.science_rounded,
-                onTap: () => _toast(context, 'Soon'),
+                onTap: () => _toast(context, t.common_soon),
               ),
               _QuickAction(
-                title: 'Prescription',
-                subtitle: 'Dispense',
+                title: t.home_quick_prescription,
+                subtitle: t.home_quick_prescription_sub,
                 icon: Icons.medication_rounded,
-                onTap: () => _toast(context, 'Soon'),
+                onTap: () => _toast(context, t.common_soon),
               ),
             ],
           ),
@@ -75,7 +74,7 @@ class HomePage extends StatelessWidget {
           const SizedBox(height: 16),
 
           Text(
-            'Modules',
+            t.home_modules_title,
             style: theme.textTheme.titleMedium?.copyWith(
               fontWeight: FontWeight.w800,
             ),
@@ -86,27 +85,27 @@ class HomePage extends StatelessWidget {
             items: [
               _ModuleItem(
                 title: t.staff_title,
-                subtitle: 'Users, roles, permissions',
+                subtitle: t.home_module_staff_sub,
                 icon: Icons.admin_panel_settings_rounded,
                 onTap: () => _toast(context, t.nav_staff),
               ),
               _ModuleItem(
                 title: 'Lab',
-                subtitle: 'Orders & results',
+                subtitle: t.home_module_lab_sub,
                 icon: Icons.biotech_rounded,
-                onTap: () => _toast(context, 'Soon'),
+                onTap: () => _toast(context, t.common_soon),
               ),
               _ModuleItem(
                 title: 'Pharmacy',
-                subtitle: 'Prescriptions & dispensing',
+                subtitle: t.home_module_pharmacy_sub,
                 icon: Icons.local_pharmacy_rounded,
-                onTap: () => _toast(context, 'Soon'),
+                onTap: () => _toast(context, t.common_soon),
               ),
               _ModuleItem(
                 title: 'Inventory',
-                subtitle: 'Items, stock, expiry',
+                subtitle: t.home_module_inventory_sub,
                 icon: Icons.warehouse_rounded,
-                onTap: () => _toast(context, 'Soon'),
+                onTap: () => _toast(context, t.common_soon),
               ),
             ],
           ),

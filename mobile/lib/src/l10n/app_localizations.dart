@@ -715,6 +715,90 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'User created successfully'**
   String get create_user_success;
+
+  /// No description provided for @home_quick_new_patient.
+  ///
+  /// In en, this message translates to:
+  /// **'New patient'**
+  String get home_quick_new_patient;
+
+  /// No description provided for @home_quick_new_patient_sub.
+  ///
+  /// In en, this message translates to:
+  /// **'Register patient'**
+  String get home_quick_new_patient_sub;
+
+  /// No description provided for @home_quick_visit_admit.
+  ///
+  /// In en, this message translates to:
+  /// **'Visit / Admit'**
+  String get home_quick_visit_admit;
+
+  /// No description provided for @home_quick_visit_admit_sub.
+  ///
+  /// In en, this message translates to:
+  /// **'Open file'**
+  String get home_quick_visit_admit_sub;
+
+  /// No description provided for @home_quick_lab_order.
+  ///
+  /// In en, this message translates to:
+  /// **'Lab order'**
+  String get home_quick_lab_order;
+
+  /// No description provided for @home_quick_lab_order_sub.
+  ///
+  /// In en, this message translates to:
+  /// **'Tests'**
+  String get home_quick_lab_order_sub;
+
+  /// No description provided for @home_quick_prescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Prescription'**
+  String get home_quick_prescription;
+
+  /// No description provided for @home_quick_prescription_sub.
+  ///
+  /// In en, this message translates to:
+  /// **'Dispense'**
+  String get home_quick_prescription_sub;
+
+  /// No description provided for @home_modules_title.
+  ///
+  /// In en, this message translates to:
+  /// **'Modules'**
+  String get home_modules_title;
+
+  /// No description provided for @home_module_staff_sub.
+  ///
+  /// In en, this message translates to:
+  /// **'Users, roles, permissions'**
+  String get home_module_staff_sub;
+
+  /// No description provided for @home_module_lab_sub.
+  ///
+  /// In en, this message translates to:
+  /// **'Orders & results'**
+  String get home_module_lab_sub;
+
+  /// No description provided for @home_module_pharmacy_sub.
+  ///
+  /// In en, this message translates to:
+  /// **'Prescriptions & dispensing'**
+  String get home_module_pharmacy_sub;
+
+  /// No description provided for @home_module_inventory_sub.
+  ///
+  /// In en, this message translates to:
+  /// **'Items, stock, expiry'**
+  String get home_module_inventory_sub;
+
+  /// No description provided for @common_soon.
+  ///
+  /// In en, this message translates to:
+  /// **'Soon'**
+  String get common_soon;
 }
 
 class _AppLocalizationsDelegate

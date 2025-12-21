@@ -322,4 +322,46 @@ class AppLocalizationsAr extends AppLocalizations {
 
   @override
   String get create_user_success => 'تم إنشاء المستخدم بنجاح';
+
+  @override
+  String get home_quick_new_patient => 'مريض جديد';
+
+  @override
+  String get home_quick_new_patient_sub => 'تسجيل مريض';
+
+  @override
+  String get home_quick_visit_admit => 'زيارة / تنويم';
+
+  @override
+  String get home_quick_visit_admit_sub => 'فتح ملف';
+
+  @override
+  String get home_quick_lab_order => 'طلب مختبر';
+
+  @override
+  String get home_quick_lab_order_sub => 'تحاليل';
+
+  @override
+  String get home_quick_prescription => 'وصفة دوائية';
+
+  @override
+  String get home_quick_prescription_sub => 'صرف';
+
+  @override
+  String get home_modules_title => 'الأقسام';
+
+  @override
+  String get home_module_staff_sub => 'المستخدمون، الأدوار، الصلاحيات';
+
+  @override
+  String get home_module_lab_sub => 'الطلبات والنتائج';
+
+  @override
+  String get home_module_pharmacy_sub => 'الوصفات والصرف';
+
+  @override
+  String get home_module_inventory_sub => 'الأصناف، المخزون، الصلاحية';
+
+  @override
+  String get common_soon => 'قريباً';
 }

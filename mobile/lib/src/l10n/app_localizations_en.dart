@@ -326,4 +326,46 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get create_user_success => 'User created successfully';
+
+  @override
+  String get home_quick_new_patient => 'New patient';
+
+  @override
+  String get home_quick_new_patient_sub => 'Register patient';
+
+  @override
+  String get home_quick_visit_admit => 'Visit / Admit';
+
+  @override
+  String get home_quick_visit_admit_sub => 'Open file';
+
+  @override
+  String get home_quick_lab_order => 'Lab order';
+
+  @override
+  String get home_quick_lab_order_sub => 'Tests';
+
+  @override
+  String get home_quick_prescription => 'Prescription';
+
+  @override
+  String get home_quick_prescription_sub => 'Dispense';
+
+  @override
+  String get home_modules_title => 'Modules';
+
+  @override
+  String get home_module_staff_sub => 'Users, roles, permissions';
+
+  @override
+  String get home_module_lab_sub => 'Orders & results';
+
+  @override
+  String get home_module_pharmacy_sub => 'Prescriptions & dispensing';
+
+  @override
+  String get home_module_inventory_sub => 'Items, stock, expiry';
+
+  @override
+  String get common_soon => 'Soon';
 }

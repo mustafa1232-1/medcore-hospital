@@ -13,11 +13,12 @@ const rolesRoutes = require('./modules/roles/roles.routes');
 const facilityRoutes = require('./modules/facility/facility.routes');
 const usersRoutes = require('./modules/users/users.routes');
 
-// ✅ NEW: Patients module
 const patientsRoutes = require('./modules/patients/patients.routes');
+const admissionsRoutes = require('./modules/admissions/admissions.routes');
 
-// (لاحقاً) ✅ NEW: Admissions module
-// const admissionsRoutes = require('./modules/admissions/admissions.routes');
+// ✅ NEW
+const ordersRoutes = require('./modules/orders/orders.routes');
+const tasksRoutes = require('./modules/tasks/tasks.routes');
 
 const app = express();
 
@@ -34,20 +35,21 @@ app.use('/api/roles', rolesRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/facility', facilityRoutes);
 
-// ✅ NEW
 app.use('/api/patients', patientsRoutes);
+app.use('/api/admissions', admissionsRoutes);
 
-// ✅ (لاحقاً)
-// app.use('/api/admissions', admissionsRoutes);
+// ✅ Orders & Tasks
+app.use('/api/orders', ordersRoutes);
+app.use('/api/tasks', tasksRoutes);
 
-// 404 JSON (بدل Cannot POST ...)
+// 404 JSON
 app.use((req, res) => {
   res.status(404).json({
     message: `Route not found: ${req.method} ${req.originalUrl}`,
   });
 });
 
-// Error handler (آخر شيء)
+// Error handler
 app.use((err, _req, res, _next) => {
   const status = err.status || 500;
 
