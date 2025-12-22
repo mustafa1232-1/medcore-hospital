@@ -4,7 +4,7 @@ const passwordService = require('../auth/password.service'); // ✅ reuse the sa
 
 function actor(req) {
   return {
-    userId: req.user?.sub,
+    userId: req.user?.sub, // ✅ keep as you use in JWT
     tenantId: req.user?.tenantId,
     roles: Array.isArray(req.user?.roles) ? req.user.roles : [],
   };
@@ -61,7 +61,7 @@ async function setActive(req, res, next) {
   }
 }
 
-// ✅ NEW: reset password (ADMIN)
+// ✅ reset password (ADMIN)
 async function resetPassword(req, res, next) {
   try {
     const tenantId = req.user?.tenantId;
@@ -85,7 +85,7 @@ async function resetPassword(req, res, next) {
   }
 }
 
-// ✅ NEW: set/transfer/unassign department (ADMIN or DOCTOR with rules)
+// ✅ set/transfer/unassign department (ADMIN or DOCTOR with rules)
 async function setDepartment(req, res, next) {
   try {
     const tenantId = req.user?.tenantId;
@@ -113,7 +113,5 @@ module.exports = {
   createUser,
   setActive,
   resetPassword,
-
-  // ✅ export
   setDepartment,
 };

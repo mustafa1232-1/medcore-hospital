@@ -13,10 +13,13 @@ class DepartmentsApiServiceV2 {
       final m = v.cast<String, dynamic>();
       dynamic items =
           m['items'] ?? m['data'] ?? m['departments'] ?? m['results'];
+
+      // ✅ Support nested "data" shape (e.g. { ok:true, data:{ items:[...] } })
       if (items is Map) {
         final mm = items.cast<String, dynamic>();
         items = mm['items'] ?? mm['data'] ?? mm['departments'] ?? mm['results'];
       }
+
       if (items is List) {
         return items
             .whereType<Map>()
@@ -94,12 +97,19 @@ class DepartmentsApiServiceV2 {
 
   /// ✅ NEW: overview
   /// GET /api/facility/departments/:id/overview
+  ///
+  /// Supports backend shapes:
+  /// - { ok:true, data:{...} }
+  /// - { data:{...} }
+  /// - { ...direct... }
   Future<Map<String, dynamic>> getDepartmentOverview(String id) async {
     final res = await _dio.get('/api/facility/departments/$id/overview');
-    final data = _asMap(res.data);
-    final d = data['data'];
-    if (d is Map) return d.cast<String, dynamic>();
-    return data;
+    final root = _asMap(res.data);
+
+    final d1 = root['data'];
+    if (d1 is Map) return d1.cast<String, dynamic>();
+
+    return root;
   }
 
   /// PATCH /api/facility/departments/:id

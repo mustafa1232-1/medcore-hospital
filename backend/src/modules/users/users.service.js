@@ -18,7 +18,10 @@ function shortSuffix4() {
 }
 
 async function getTenantCodeBase(client, tenantId) {
-  const q = await client.query(`SELECT code FROM tenants WHERE id = $1 LIMIT 1`, [tenantId]);
+  const q = await client.query(
+    `SELECT code FROM tenants WHERE id = $1 LIMIT 1`,
+    [tenantId]
+  );
   const code = q.rows[0]?.code || 'facility';
   const base = String(code).split('-')[0] || 'facility';
   return base;
@@ -29,7 +32,8 @@ async function generateUniqueStaffCode(client, tenantId, fullName) {
   const nameBase = nameBase0.length > 14 ? nameBase0.slice(0, 14) : nameBase0;
 
   const tenantBase0 = await getTenantCodeBase(client, tenantId);
-  const tenantBase = tenantBase0.length > 10 ? tenantBase0.slice(0, 10) : tenantBase0;
+  const tenantBase =
+    tenantBase0.length > 10 ? tenantBase0.slice(0, 10) : tenantBase0;
 
   for (let i = 0; i < 10; i++) {
     const staffCode = `${nameBase}-${tenantBase}-${shortSuffix4()}`;
@@ -123,7 +127,6 @@ async function listUsers({ tenantId, q, active, limit = 50, offset = 0 }) {
   let rolesMap = new Map();
 
   if (ids.length) {
-    // ✅ IMPORTANT: tenant-scope roles to avoid cross-tenant leakage
     const rolesQ = await pool.query(
       `
       SELECT ur.user_id, r.name
@@ -150,13 +153,20 @@ async function listUsers({ tenantId, q, active, limit = 50, offset = 0 }) {
   }));
 }
 
-// ✅ UPDATED: accepts departmentId
-async function createUser({ tenantId, fullName, email, phone, password, roles, departmentId }) {
+// accepts departmentId
+async function createUser({
+  tenantId,
+  fullName,
+  email,
+  phone,
+  password,
+  roles,
+  departmentId,
+}) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
 
-    // ✅ Optional but important: ensure department belongs to same tenant
     if (departmentId) {
       const dep = await client.query(
         `SELECT 1 FROM departments WHERE id = $1 AND tenant_id = $2 LIMIT 1`,
@@ -187,7 +197,15 @@ async function createUser({ tenantId, fullName, email, phone, password, roles, d
         created_at AS "createdAt",
         department_id AS "departmentId"
       `,
-      [tenantId, staffCode, fullName, email || null, phone || null, passwordHash, departmentId || null]
+      [
+        tenantId,
+        staffCode,
+        fullName,
+        email || null,
+        phone || null,
+        passwordHash,
+        departmentId || null,
+      ]
     );
 
     const user = uRows[0];
@@ -205,7 +223,6 @@ async function createUser({ tenantId, fullName, email, phone, password, roles, d
       );
     }
 
-    // ✅ tenant-scope roles for safety
     const rolesQ = await client.query(
       `
       SELECT r.name
@@ -261,7 +278,6 @@ async function setUserActive({ tenantId, userId, isActive }) {
 
   const user = rows[0];
 
-  // ✅ tenant-scope roles for safety
   const rolesQ = await pool.query(
     `
     SELECT r.name
@@ -278,7 +294,7 @@ async function setUserActive({ tenantId, userId, isActive }) {
 }
 
 // =========================
-// ✅ NEW: assign/transfer/unassign department
+// ✅ assign/transfer/unassign department
 // =========================
 function normalizeRoles(arr) {
   return (Array.isArray(arr) ? arr : [])
@@ -338,6 +354,7 @@ async function ensureDepartmentBelongsToTenant({ tenantId, departmentId }) {
 async function setUserDepartment({ actor, tenantId, targetUserId, departmentId }) {
   const actorUserId = actor?.userId;
   const actorTenantId = actor?.tenantId;
+
   if (!actorUserId || !actorTenantId) throw new HttpError(401, 'Unauthorized');
   if (actorTenantId !== tenantId) throw new HttpError(401, 'Unauthorized');
 
@@ -358,11 +375,17 @@ async function setUserDepartment({ actor, tenantId, targetUserId, departmentId }
 
   if (isDoctor) {
     const isTargetNurse = targetRoles.includes('NURSE');
-    if (!isTargetNurse) throw new HttpError(403, 'Doctor can manage NURSE only');
+    const isTargetDoctor = targetRoles.includes('DOCTOR');
+    if (!isTargetNurse || isTargetDoctor) {
+      throw new HttpError(403, 'Doctor can manage NURSE only');
+    }
   }
 
-  if (departmentId !== null) {
-    await ensureDepartmentBelongsToTenant({ tenantId, departmentId });
+  // normalize departmentId: undefined -> null
+  const depId = departmentId === undefined ? null : departmentId;
+
+  if (depId !== null) {
+    await ensureDepartmentBelongsToTenant({ tenantId, departmentId: depId });
   }
 
   const { rows, rowCount } = await pool.query(
@@ -381,7 +404,7 @@ async function setUserDepartment({ actor, tenantId, targetUserId, departmentId }
       created_at AS "createdAt",
       department_id AS "departmentId"
     `,
-    [tenantId, targetUserId, departmentId]
+    [tenantId, targetUserId, depId]
   );
 
   if (rowCount === 0) throw new HttpError(404, 'User not found');
@@ -391,7 +414,7 @@ async function setUserDepartment({ actor, tenantId, targetUserId, departmentId }
   let depName = null;
   let depCode = null;
 
-  if (departmentId) {
+  if (depId) {
     const depInfo = await pool.query(
       `
       SELECT d.name AS "departmentName", d.code AS "departmentCode"
@@ -399,7 +422,7 @@ async function setUserDepartment({ actor, tenantId, targetUserId, departmentId }
       WHERE d.tenant_id = $1 AND d.id = $2
       LIMIT 1
       `,
-      [tenantId, departmentId]
+      [tenantId, depId]
     );
     depName = depInfo.rows[0]?.departmentName || null;
     depCode = depInfo.rows[0]?.departmentCode || null;
@@ -417,7 +440,5 @@ module.exports = {
   listUsers,
   createUser,
   setUserActive,
-
-  // ✅ new
   setUserDepartment,
 };

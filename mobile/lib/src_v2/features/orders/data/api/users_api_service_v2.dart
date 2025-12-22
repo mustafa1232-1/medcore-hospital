@@ -30,6 +30,23 @@ class UsersApiServiceV2 {
     return <String, dynamic>{};
   }
 
+  Map<String, dynamic> _unwrapOne(dynamic data) {
+    final m = _asMap(data);
+
+    // common shapes:
+    // { ok:true, user:{...} }
+    // { ok:true, data:{...} }
+    // { data:{...} }
+    // { user:{...} }
+    final user = m['user'];
+    if (user is Map) return user.cast<String, dynamic>();
+
+    final d = m['data'];
+    if (d is Map) return d.cast<String, dynamic>();
+
+    return m;
+  }
+
   Future<List<Map<String, dynamic>>> listUsers({
     String q = '',
     bool? active,
@@ -65,20 +82,13 @@ class UsersApiServiceV2 {
       'roles': roles,
     };
 
-    // ✅ do NOT send unless you are sure backend supports it
+    // ✅ keep your safe behavior
     if (departmentId != null && departmentId.trim().isNotEmpty) {
       payload['departmentId'] = departmentId.trim();
     }
 
     final res = await _dio.post('/api/users', data: payload);
-
-    // expected: { ok:true, user:{...} }
-    final data = _asMap(res.data);
-    final user = data['user'];
-    if (user is Map) return user.cast<String, dynamic>();
-
-    // fallback
-    return data;
+    return _unwrapOne(res.data);
   }
 
   Future<void> setActive(String userId, bool isActive) async {
@@ -90,5 +100,29 @@ class UsersApiServiceV2 {
       '/api/users/$userId/reset-password',
       data: {'newPassword': newPassword},
     );
+  }
+
+  // ============================
+  // ✅ NEW: Move/Remove user from department
+  // PATCH /api/users/:id/department
+  // body: { departmentId: <uuid|null> }
+  // - departmentId = null => remove from department
+  // ============================
+  Future<Map<String, dynamic>> updateUserDepartment({
+    required String userId,
+    String? departmentId,
+  }) async {
+    final payload = <String, dynamic>{
+      // send null to remove (backend should accept null)
+      'departmentId': (departmentId == null || departmentId.trim().isEmpty)
+          ? null
+          : departmentId.trim(),
+    };
+
+    final res = await _dio.patch(
+      '/api/users/$userId/department',
+      data: payload,
+    );
+    return _unwrapOne(res.data);
   }
 }

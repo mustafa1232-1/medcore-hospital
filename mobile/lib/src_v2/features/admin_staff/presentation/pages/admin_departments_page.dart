@@ -3,7 +3,7 @@ import '../../../../core/shell/v2_shell_scaffold.dart';
 import '../../../orders/data/api/departments_api_service_v2.dart';
 import 'admin_create_department_page.dart';
 
-// ✅ NEW: details page
+// ✅ details page
 import 'admin_department_details_page.dart';
 
 class AdminDepartmentsPage extends StatefulWidget {
@@ -79,9 +79,7 @@ class _AdminDepartmentsPageState extends State<AdminDepartmentsPage> {
           padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
           children: [
             _headerCard(theme),
-
             const SizedBox(height: 12),
-
             TextField(
               controller: _q,
               textInputAction: TextInputAction.search,
@@ -94,9 +92,7 @@ class _AdminDepartmentsPageState extends State<AdminDepartmentsPage> {
                 ),
               ),
             ),
-
             const SizedBox(height: 10),
-
             Row(
               children: [
                 Expanded(
@@ -124,9 +120,7 @@ class _AdminDepartmentsPageState extends State<AdminDepartmentsPage> {
                 ),
               ],
             ),
-
             const SizedBox(height: 12),
-
             if (_loading)
               const Padding(
                 padding: EdgeInsets.only(top: 40),
@@ -196,7 +190,6 @@ class _AdminDepartmentsPageState extends State<AdminDepartmentsPage> {
       margin: const EdgeInsets.only(bottom: 10),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
       child: ListTile(
-        // ✅ NEW: enter department details
         onTap: () {
           Navigator.of(context).push(
             MaterialPageRoute(
