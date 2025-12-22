@@ -12,15 +12,26 @@ function normalize(name) {
   return String(name || '').toUpperCase().trim();
 }
 
-function requireRole(role) {
-  const needed = normalize(role);
+/**
+ * requireRole('ADMIN')
+ * requireRole(['ADMIN', 'DOCTOR'])
+ */
+function requireRole(required) {
+  const neededRoles = Array.isArray(required)
+    ? required.map(normalize)
+    : [normalize(required)];
 
   return (req, _res, next) => {
     const rolesRaw = Array.isArray(req.user?.roles) ? req.user.roles : [];
-    const roles = rolesRaw.map(roleNameOf).map(normalize).filter(Boolean);
+    const userRoles = rolesRaw
+      .map(roleNameOf)
+      .map(normalize)
+      .filter(Boolean);
 
-    if (!roles.includes(needed)) {
-      return next(new HttpError(403, 'Forbidden'));
+    const allowed = neededRoles.some((r) => userRoles.includes(r));
+
+    if (!allowed) {
+      return next(new HttpError(403, 'Forbidden: insufficient role'));
     }
 
     return next();
