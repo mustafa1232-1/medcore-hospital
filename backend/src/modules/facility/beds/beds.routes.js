@@ -11,10 +11,29 @@ const router = express.Router();
 router.get('/', requireAuth, requirePermission('facility.read'), ctrl.list);
 router.get('/:id', requireAuth, requirePermission('facility.read'), ctrl.getOne);
 
-router.post('/', requireAuth, requirePermission('facility.write'), validateBody(createBedSchema), ctrl.create);
-router.patch('/:id', requireAuth, requirePermission('facility.write'), validateBody(updateBedSchema), ctrl.update);
+router.post(
+  '/',
+  requireAuth,
+  requirePermission('facility.write'),
+  validateBody(createBedSchema),
+  ctrl.create
+);
 
-router.post('/:id/status', requireAuth, requirePermission('facility.write'), validateBody(changeStatusSchema), ctrl.changeStatus);
+router.patch(
+  '/:id',
+  requireAuth,
+  requirePermission('facility.write'),
+  validateBody(updateBedSchema),
+  ctrl.update
+);
+
+router.post(
+  '/:id/status',
+  requireAuth,
+  requirePermission('facility.write'),
+  validateBody(changeStatusSchema),
+  ctrl.changeStatus
+);
 
 router.delete('/:id', requireAuth, requirePermission('facility.write'), ctrl.remove);
 

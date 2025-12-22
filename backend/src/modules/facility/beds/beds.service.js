@@ -27,6 +27,41 @@ async function ensureRoom({ tenantId, roomId }) {
   return rows[0]; // { id, code }
 }
 
+// ✅ Bed used once if any row exists in admission_beds
+async function bedUsedOnce({ tenantId, bedId }) {
+  const q = await pool.query(
+    `
+    SELECT 1
+    FROM admission_beds ab
+    WHERE ab.tenant_id = $1
+      AND ab.bed_id = $2
+    LIMIT 1
+    `,
+    [tenantId, bedId]
+  );
+  return q.rowCount > 0;
+}
+
+// ✅ Bed occupied now if has active assignment + admission ACTIVE/PENDING
+async function bedOccupiedNow({ tenantId, bedId }) {
+  const q = await pool.query(
+    `
+    SELECT 1
+    FROM admission_beds ab
+    JOIN admissions a
+      ON a.id = ab.admission_id
+     AND a.tenant_id = $1
+    WHERE ab.tenant_id = $1
+      AND ab.bed_id = $2
+      AND ab.is_active = true
+      AND a.status IN ('ACTIVE', 'PENDING')
+    LIMIT 1
+    `,
+    [tenantId, bedId]
+  );
+  return q.rowCount > 0;
+}
+
 async function generateBedCode({ tenantId, roomId }) {
   const room = await ensureRoom({ tenantId, roomId });
   const roomCode = String(room.code).toUpperCase().trim();
@@ -69,9 +104,10 @@ async function generateBedCode({ tenantId, roomId }) {
 async function createBed({ tenantId, roomId, code, status, notes, isActive }) {
   await ensureRoom({ tenantId, roomId });
 
-  const finalCode = (code && String(code).trim())
-    ? String(code).trim()
-    : await generateBedCode({ tenantId, roomId });
+  const finalCode =
+    code && String(code).trim()
+      ? String(code).trim()
+      : await generateBedCode({ tenantId, roomId });
 
   try {
     const { rows } = await pool.query(
@@ -80,7 +116,8 @@ async function createBed({ tenantId, roomId, code, status, notes, isActive }) {
        RETURNING id, tenant_id, room_id, code, status, notes, is_active, created_at`,
       [tenantId, roomId, finalCode, status, notes, isActive]
     );
-    return rows[0];
+
+    return { ...rows[0], usedOnce: false, occupiedNow: false, canEdit: true, canDelete: true };
   } catch (e) {
     if (isUniqueViolation(e)) throw new HttpError(409, 'Bed code already exists');
     throw e;
@@ -91,27 +128,65 @@ async function listBeds({ tenantId, roomId, departmentId, status, active }) {
   const params = [tenantId];
   let where = `b.tenant_id = $1`;
 
-  if (roomId) { params.push(roomId); where += ` AND b.room_id = $${params.length}`; }
-  if (status) { params.push(status); where += ` AND b.status = $${params.length}::bed_status`; }
-  if (active !== undefined) { params.push(active); where += ` AND b.is_active = $${params.length}`; }
+  if (roomId) {
+    params.push(roomId);
+    where += ` AND b.room_id = $${params.length}`;
+  }
+  if (status) {
+    params.push(status);
+    where += ` AND b.status = $${params.length}::bed_status`;
+  }
+  if (active !== undefined) {
+    params.push(active);
+    where += ` AND b.is_active = $${params.length}`;
+  }
 
-  let join = `JOIN rooms r ON r.id = b.room_id`;
+  const join = `JOIN rooms r ON r.id = b.room_id`;
   if (departmentId) {
     params.push(departmentId);
     where += ` AND r.department_id = $${params.length}`;
   }
 
   const { rows } = await pool.query(
-    `SELECT
-        b.id, b.tenant_id, b.room_id, b.code, b.status, b.notes, b.is_active, b.created_at,
-        r.department_id
-     FROM beds b
-     ${join}
-     WHERE ${where}
-     ORDER BY b.code ASC`,
+    `
+    SELECT
+      b.id, b.tenant_id, b.room_id, b.code, b.status, b.notes, b.is_active, b.created_at,
+      r.department_id,
+
+      EXISTS (
+        SELECT 1
+        FROM admission_beds ab
+        WHERE ab.tenant_id = $1
+          AND ab.bed_id = b.id
+        LIMIT 1
+      ) AS "usedOnce",
+
+      EXISTS (
+        SELECT 1
+        FROM admission_beds ab
+        JOIN admissions a
+          ON a.id = ab.admission_id
+         AND a.tenant_id = $1
+        WHERE ab.tenant_id = $1
+          AND ab.bed_id = b.id
+          AND ab.is_active = true
+          AND a.status IN ('ACTIVE', 'PENDING')
+        LIMIT 1
+      ) AS "occupiedNow"
+
+    FROM beds b
+    ${join}
+    WHERE ${where}
+    ORDER BY b.code ASC
+    `,
     params
   );
-  return rows;
+
+  return rows.map((x) => ({
+    ...x,
+    canEdit: !x.usedOnce && !x.occupiedNow,
+    canDelete: !x.usedOnce && !x.occupiedNow,
+  }));
 }
 
 async function getBed({ tenantId, id }) {
@@ -124,21 +199,51 @@ async function getBed({ tenantId, id }) {
     [tenantId, id]
   );
   if (!rows[0]) throw new HttpError(404, 'Bed not found');
-  return rows[0];
+
+  const usedOnce = await bedUsedOnce({ tenantId, bedId: id });
+  const occupiedNow = await bedOccupiedNow({ tenantId, bedId: id });
+
+  return {
+    ...rows[0],
+    usedOnce,
+    occupiedNow,
+    canEdit: !usedOnce && !occupiedNow,
+    canDelete: !usedOnce && !occupiedNow,
+  };
 }
 
 async function updateBed({ tenantId, id, patch }) {
   await getBed({ tenantId, id });
+
+  // ✅ safety: block edits if used once OR occupied now
+  const usedOnce = await bedUsedOnce({ tenantId, bedId: id });
+  const occupiedNow = await bedOccupiedNow({ tenantId, bedId: id });
+  if (usedOnce || occupiedNow) {
+    throw new HttpError(403, 'Bed cannot be modified because it was used or currently occupied');
+  }
+
   if (patch.roomId) await ensureRoom({ tenantId, roomId: patch.roomId });
 
   const set = [];
   const values = [tenantId, id];
   let i = 2;
 
-  if (patch.roomId !== undefined) { values.push(patch.roomId); set.push(`room_id = $${++i}`); }
-  if (patch.code !== undefined) { values.push(patch.code); set.push(`code = $${++i}`); }
-  if (patch.notes !== undefined) { values.push(patch.notes); set.push(`notes = $${++i}`); }
-  if (patch.isActive !== undefined) { values.push(patch.isActive); set.push(`is_active = $${++i}`); }
+  if (patch.roomId !== undefined) {
+    values.push(patch.roomId);
+    set.push(`room_id = $${++i}`);
+  }
+  if (patch.code !== undefined) {
+    values.push(patch.code);
+    set.push(`code = $${++i}`);
+  }
+  if (patch.notes !== undefined) {
+    values.push(patch.notes);
+    set.push(`notes = $${++i}`);
+  }
+  if (patch.isActive !== undefined) {
+    values.push(patch.isActive);
+    set.push(`is_active = $${++i}`);
+  }
 
   if (set.length === 0) return getBed({ tenantId, id });
 
@@ -150,7 +255,7 @@ async function updateBed({ tenantId, id, patch }) {
        RETURNING id, tenant_id, room_id, code, status, notes, is_active, created_at`,
       values
     );
-    return rows[0];
+    return { ...rows[0], usedOnce: false, occupiedNow: false, canEdit: true, canDelete: true };
   } catch (e) {
     if (isUniqueViolation(e)) throw new HttpError(409, 'Bed code already exists');
     throw e;
@@ -168,7 +273,7 @@ async function changeBedStatus({ tenantId, id, nextStatus }) {
     throw new HttpError(409, `Invalid transition: ${current} -> ${nextStatus}`);
   }
 
-  // ✅ منع جعل السرير AVAILABLE إذا كان عليه تعيين فعّال
+  // ✅ already in your logic: prevent AVAILABLE when active assignment exists
   if (nextStatus === 'AVAILABLE') {
     const activeAssign = await pool.query(
       `
@@ -193,11 +298,21 @@ async function changeBedStatus({ tenantId, id, nextStatus }) {
      RETURNING id, tenant_id, room_id, code, status, notes, is_active, created_at`,
     [tenantId, id, nextStatus]
   );
-  return rows[0];
+
+  // keep flags consistent
+  return { ...rows[0], usedOnce: bed.usedOnce, occupiedNow: bed.occupiedNow, canEdit: bed.canEdit, canDelete: bed.canDelete };
 }
 
 async function softDeleteBed({ tenantId, id }) {
   await getBed({ tenantId, id });
+
+  // ✅ safety: cannot delete if used once OR occupied now
+  const usedOnce = await bedUsedOnce({ tenantId, bedId: id });
+  const occupiedNow = await bedOccupiedNow({ tenantId, bedId: id });
+  if (usedOnce || occupiedNow) {
+    throw new HttpError(403, 'Bed cannot be deleted because it was used or currently occupied');
+  }
+
   const { rows } = await pool.query(
     `UPDATE beds
      SET is_active = false
@@ -205,7 +320,7 @@ async function softDeleteBed({ tenantId, id }) {
      RETURNING id, tenant_id, room_id, code, status, notes, is_active, created_at`,
     [tenantId, id]
   );
-  return rows[0];
+  return { ...rows[0], usedOnce: false, occupiedNow: false, canEdit: true, canDelete: true };
 }
 
 module.exports = {

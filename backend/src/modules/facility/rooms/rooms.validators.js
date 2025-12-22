@@ -3,7 +3,7 @@ const Joi = require('joi');
 const createRoomSchema = Joi.object({
   departmentId: Joi.string().uuid().required(),
 
-  // ✅ أصبح اختياري: إذا لم يُرسل سنولده في service
+  // ✅ optional: service can generate
   code: Joi.string().trim().min(2).max(50).optional().allow(null, ''),
 
   name: Joi.string().trim().min(1).max(120).required(),
