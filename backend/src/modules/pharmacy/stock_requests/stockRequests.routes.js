@@ -14,7 +14,6 @@ const {
   submitSchema,
   approveSchema,
   rejectSchema,
-  // cancelSchema, // (اختياري إذا فعلنا cancel)
 } = require('./stockRequests.validators');
 
 const router = express.Router();
@@ -25,7 +24,6 @@ const router = express.Router();
  * - ADMIN: view + approve/reject
  */
 
-// List
 router.get(
   '/',
   requireAuth,
@@ -50,10 +48,8 @@ router.get(
   ctrl.list
 );
 
-// Details
 router.get('/:id', requireAuth, requireRole('PHARMACY', 'ADMIN'), ctrl.getOne);
 
-// Create request (PHARMACY فقط)
 router.post(
   '/',
   requireAuth,
@@ -62,7 +58,6 @@ router.post(
   ctrl.create
 );
 
-// Lines (draft only) - PHARMACY فقط
 router.post(
   '/:id/lines',
   requireAuth,
@@ -86,7 +81,6 @@ router.delete(
   ctrl.removeLine
 );
 
-// Submit (PHARMACY فقط)
 router.post(
   '/:id/submit',
   requireAuth,
@@ -95,7 +89,6 @@ router.post(
   ctrl.submit
 );
 
-// Approve/Reject (ADMIN فقط)
 router.post(
   '/:id/approve',
   requireAuth,
