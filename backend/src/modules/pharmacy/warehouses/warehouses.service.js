@@ -1,4 +1,3 @@
-// backend/src/modules/pharmacy/warehouses/warehouses.service.js
 const pool = require('../../../db/pool');
 const { HttpError } = require('../../../utils/httpError');
 
@@ -15,38 +14,38 @@ function clampInt(n, { min, max, fallback }) {
 }
 
 async function ensureUserIsPharmacy({ tenantId, userId }) {
-  if (!tenantId) throw new HttpError(400, 'Missing tenantId');
-  if (!userId) throw new HttpError(400, 'Missing userId');
-
-  // ✅ verify user exists in same tenant and is active
-  const uRes = await pool.query(
+  const { rows } = await pool.query(
     `
-    SELECT u.id, u.is_active AS "isActive"
+    SELECT
+      u.id,
+      u.tenant_id AS "tenantId",
+      u.is_active AS "isActive",
+      COALESCE(
+        ARRAY_AGG(UPPER(r.name)) FILTER (WHERE r.name IS NOT NULL),
+        '{}'
+      ) AS "roles"
     FROM users u
+    LEFT JOIN user_roles ur ON ur.user_id = u.id
+    LEFT JOIN roles r ON r.id = ur.role_id
     WHERE u.tenant_id = $1 AND u.id = $2
+    GROUP BY u.id
     LIMIT 1
     `,
     [tenantId, userId]
   );
 
-  if (!uRes.rows.length) throw new HttpError(404, 'Pharmacist user not found');
-  if (!uRes.rows[0].isActive) throw new HttpError(400, 'Assigned pharmacist is not active');
+  if (!rows.length) throw new HttpError(404, 'Pharmacist user not found');
 
-  // ✅ verify user has PHARMACY role using your actual schema (user_roles + roles)
-  const roleRes = await pool.query(
-    `
-    SELECT 1
-    FROM user_roles ur
-    JOIN roles r ON r.id = ur.role_id
-    WHERE ur.user_id = $1
-      AND UPPER(r.name) = 'PHARMACY'
-    LIMIT 1
-    `,
-    [userId]
-  );
+  const isActive = !!rows[0].isActive;
+  const roles = Array.isArray(rows[0].roles) ? rows[0].roles : [];
 
-  if (!roleRes.rows.length) {
-    throw new HttpError(400, 'Assigned user must have PHARMACY role');
+  if (!isActive) throw new HttpError(400, 'Assigned pharmacist is not active');
+
+  if (!roles.includes('PHARMACY')) {
+    throw new HttpError(
+      400,
+      'Assigned user must have PHARMACY role (role mapping not found).'
+    );
   }
 }
 
@@ -143,16 +142,13 @@ async function createWarehouse({ tenantId, data }) {
   const pharmacistUserId = normalizeStr(data.pharmacistUserId);
   if (!pharmacistUserId) throw new HttpError(400, 'pharmacistUserId is required');
 
-  // ✅ enforce: warehouse واحد لكل Tenant حالياً
+  // Warehouse واحد لكل Tenant حالياً
   const existing = await pool.query(
     `SELECT id FROM warehouses WHERE tenant_id = $1 LIMIT 1`,
     [tenantId]
   );
-  if (existing.rows[0]) {
-    throw new HttpError(409, 'Warehouse already exists for this facility');
-  }
+  if (existing.rows[0]) throw new HttpError(409, 'Warehouse already exists for this facility');
 
-  // ✅ ensure assigned user is PHARMACY in same tenant
   await ensureUserIsPharmacy({ tenantId, userId: pharmacistUserId });
 
   try {
@@ -167,9 +163,7 @@ async function createWarehouse({ tenantId, data }) {
 
     return getWarehouse({ tenantId, id: rows[0].id });
   } catch (e) {
-    if (e && e.code === '23505') {
-      throw new HttpError(409, 'Warehouse name already exists');
-    }
+    if (e && e.code === '23505') throw new HttpError(409, 'Warehouse name already exists');
     throw e;
   }
 }
@@ -212,9 +206,7 @@ async function updateWarehouse({ tenantId, id, patch }) {
 
     return getWarehouse({ tenantId, id: rows[0].id });
   } catch (e) {
-    if (e && e.code === '23505') {
-      throw new HttpError(409, 'Warehouse name already exists');
-    }
+    if (e && e.code === '23505') throw new HttpError(409, 'Warehouse name already exists');
     throw e;
   }
 }
