@@ -12,16 +12,6 @@ function normalize(name) {
   return String(name || '').toUpperCase().trim();
 }
 
-// flatten deep (safe)
-function flatten(input) {
-  const out = [];
-  for (const x of input) {
-    if (Array.isArray(x)) out.push(...flatten(x));
-    else out.push(x);
-  }
-  return out;
-}
-
 /**
  * ✅ يدعم:
  * requireRole('ADMIN')
@@ -30,15 +20,27 @@ function flatten(input) {
  * requireRole(['PHARMACY','ADMIN'], 'DOCTOR')
  */
 function requireRole(...required) {
-  const flat = flatten(required).filter(Boolean);
+  const flat = required.flat().filter(Boolean);
   const neededRoles = flat.map(normalize).filter(Boolean);
+
+  // حماية لو تم استدعاؤه بدون أدوار (خطأ برمجي)
+  if (neededRoles.length === 0) {
+    return (_req, _res, next) =>
+      next(new HttpError(500, 'Server misconfiguration: requireRole has no roles'));
+  }
 
   return (req, _res, next) => {
     const rolesRaw = Array.isArray(req.user?.roles) ? req.user.roles : [];
-    const userRoles = rolesRaw.map(roleNameOf).map(normalize).filter(Boolean);
+    const userRoles = rolesRaw
+      .map(roleNameOf)
+      .map(normalize)
+      .filter(Boolean);
 
     const allowed = neededRoles.some((r) => userRoles.includes(r));
-    if (!allowed) return next(new HttpError(403, 'Forbidden: insufficient role'));
+
+    if (!allowed) {
+      return next(new HttpError(403, 'Forbidden: insufficient role'));
+    }
 
     return next();
   };
