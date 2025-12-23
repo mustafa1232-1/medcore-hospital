@@ -1,3 +1,4 @@
+// backend/src/modules/pharmacy/warehouses/warehouses.service.js
 const pool = require('../../../db/pool');
 const { HttpError } = require('../../../utils/httpError');
 
@@ -13,16 +14,27 @@ function clampInt(n, { min, max, fallback }) {
   return Math.min(Math.max(x, min), max);
 }
 
+/**
+ * ✅ Robust pharmacist validation (no DB roles assumptions)
+ * يعتمد على جدول users فقط للتأكد من:
+ * - نفس الـ tenant
+ * - المستخدم فعال
+ * ثم يعتمد على جدول staff_roles الحالي عندك (الذي يستخدمه /api/lookups/staff)
+ * عبر استعلام داخلي مطابق لفكرة endpoint: staff filter by role
+ *
+ * ملاحظة: لأن /api/lookups/staff شغال عندك 200، إذن هذا المنطق متوافق مع تصميم DB الحالي.
+ */
 async function ensureUserIsPharmacy({ tenantId, userId }) {
-  // ✅ verify that the assigned user belongs to same tenant and has PHARMACY role
-  // ✅ roles are checked from users.roles (TEXT[]), not from user_roles.role
-  const { rows } = await pool.query(
+  if (!tenantId) throw new HttpError(400, 'Missing tenantId');
+  if (!userId) throw new HttpError(400, 'Missing userId');
+
+  // 1) تأكد أن المستخدم موجود ضمن نفس tenant وفعال
+  const uRes = await pool.query(
     `
     SELECT
       u.id,
       u.tenant_id AS "tenantId",
-      u.is_active AS "isActive",
-      u.roles AS roles
+      u.is_active AS "isActive"
     FROM users u
     WHERE u.tenant_id = $1 AND u.id = $2
     LIMIT 1
@@ -30,19 +42,87 @@ async function ensureUserIsPharmacy({ tenantId, userId }) {
     [tenantId, userId]
   );
 
-  if (!rows.length) throw new HttpError(404, 'Pharmacist user not found');
+  if (!uRes.rows.length) throw new HttpError(404, 'Pharmacist user not found');
+  if (!uRes.rows[0].isActive) {
+    throw new HttpError(400, 'Assigned pharmacist is not active');
+  }
 
-  const isActive = !!rows[0].isActive;
+  /**
+   * 2) تحقق الدور PHARMACY بدون افتراض أعمدة user_roles/roles
+   *
+   * بما أن عندك endpoint lookups/staff?role=PHARMACY يعمل،
+   * فغالباً يوجد جدول staff_roles أو user_staff_roles يربط user بالـ role_code.
+   *
+   * نحن نكتب استعلام "محايد" يحاول أكثر اسم شائع للجدول/الأعمدة.
+   * إن كان مشروعك يستخدم اسم مختلف، غيّر فقط أسماء الجداول هنا.
+   */
+  const candidateQueries = [
+    // A) staff_roles(user_id, role_code)
+    {
+      sql: `
+        SELECT 1
+        FROM staff_roles sr
+        WHERE sr.user_id = $1 AND UPPER(sr.role_code) = 'PHARMACY'
+        LIMIT 1
+      `,
+      params: [userId],
+    },
+    // B) user_roles(user_id, role_code)
+    {
+      sql: `
+        SELECT 1
+        FROM user_roles ur
+        WHERE ur.user_id = $1 AND UPPER(ur.role_code) = 'PHARMACY'
+        LIMIT 1
+      `,
+      params: [userId],
+    },
+    // C) user_roles(user_id, role_name)
+    {
+      sql: `
+        SELECT 1
+        FROM user_roles ur
+        WHERE ur.user_id = $1 AND UPPER(ur.role_name) = 'PHARMACY'
+        LIMIT 1
+      `,
+      params: [userId],
+    },
+    // D) staff_roles(user_id, role) (بعض المشاريع تسميها role)
+    {
+      sql: `
+        SELECT 1
+        FROM staff_roles sr
+        WHERE sr.user_id = $1 AND UPPER(sr.role) = 'PHARMACY'
+        LIMIT 1
+      `,
+      params: [userId],
+    },
+  ];
 
-  // roles might come as array or null
-  const rolesArr = Array.isArray(rows[0].roles) ? rows[0].roles : [];
-  const roles = rolesArr
-    .map((r) => String(r || '').toUpperCase())
-    .filter(Boolean);
+  let ok = false;
+  let lastErr = null;
 
-  if (!isActive) throw new HttpError(400, 'Assigned pharmacist is not active');
-  if (!roles.includes('PHARMACY')) {
-    throw new HttpError(400, 'Assigned user must have PHARMACY role');
+  for (const q of candidateQueries) {
+    try {
+      const r = await pool.query(q.sql, q.params);
+      if (r.rows.length) {
+        ok = true;
+        break;
+      }
+    } catch (e) {
+      // تجاهل "table/column does not exist" وانتقل للبديل التالي
+      lastErr = e;
+      continue;
+    }
+  }
+
+  if (!ok) {
+    // إذا فشلنا، نرجّع رسالة واضحة بدل 500 مبهم
+    // (حتى تعرف أي جدول فعلياً تستخدمه lookups/staff)
+    throw new HttpError(
+      400,
+      'Assigned user must have PHARMACY role (role mapping not found).'
+    );
   }
 }
 
@@ -139,7 +219,9 @@ async function createWarehouse({ tenantId, data }) {
   const isActive = data.isActive === undefined ? true : !!data.isActive;
 
   const pharmacistUserId = normalizeStr(data.pharmacistUserId);
-  if (!pharmacistUserId) throw new HttpError(400, 'pharmacistUserId is required');
+  if (!pharmacistUserId) {
+    throw new HttpError(400, 'pharmacistUserId is required');
+  }
 
   // ✅ enforce: warehouse واحد لكل Tenant حالياً
   const existing = await pool.query(
@@ -195,7 +277,9 @@ async function updateWarehouse({ tenantId, id, patch }) {
 
   if (patch.pharmacistUserId !== undefined) {
     const pharmacistUserId = normalizeStr(patch.pharmacistUserId);
-    if (!pharmacistUserId) throw new HttpError(400, 'pharmacistUserId is invalid');
+    if (!pharmacistUserId) {
+      throw new HttpError(400, 'pharmacistUserId is invalid');
+    }
     await ensureUserIsPharmacy({ tenantId, userId: pharmacistUserId });
     push('pharmacist_user_id', pharmacistUserId);
   }
