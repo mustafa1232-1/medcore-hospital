@@ -1,0 +1,45 @@
+[
+  {
+    "generic_name": "Paracetamol",
+    "brand_name": "Panadol",
+    "strength": "500mg",
+    "form": "TABLET",
+    "route": "PO",
+    "unit": "tablet",
+    "pack_size": 20,
+    "patient_instructions_ar": "قرص واحد عند الحاجة كل 6-8 ساعات. لا تتجاوز 4 غرام يومياً.",
+    "warnings_text": "يُحذر مع أمراض الكبد أو مع أدوية أخرى تحتوي باراسيتامول."
+  },
+  {
+    "generic_name": "Amoxicillin",
+    "brand_name": "Amoxil",
+    "strength": "500mg",
+    "form": "CAPSULE",
+    "route": "PO",
+    "unit": "capsule",
+    "pack_size": 20,
+    "patient_instructions_ar": "كبسولة واحدة كل 8 ساعات حسب وصف الطبيب.",
+    "warnings_text": "يُمنع في حال حساسية البنسلين."
+  },
+  {
+    "generic_name": "Ceftriaxone",
+    "brand_name": "Rocephin",
+    "strength": "1g",
+    "form": "INJECTION",
+    "route": "IV/IM",
+    "unit": "vial",
+    "pack_size": 1,
+    "patient_instructions_ar": "يُعطى في المستشفى فقط حسب البروتوكول.",
+    "warnings_text": "يُستخدم بحذر مع حساسية السيفالوسبورين."
+  },
+  {
+    "generic_name": "Omeprazole",
+    "brand_name": "Losec",
+    "strength": "20mg",
+    "form": "CAPSULE",
+    "route": "PO",
+    "unit": "capsule",
+    "pack_size": 14,
+    "patient_instructions_ar": "كبسولة صباحاً قبل الأكل بـ 30 دقيقة."
+  }
+]
