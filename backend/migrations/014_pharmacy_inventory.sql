@@ -9,7 +9,10 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'drug_form') THEN
-    CREATE TYPE drug_form AS ENUM ('TABLET','CAPSULE','SYRUP','INJECTION','DROPS','CREAM','OINTMENT','SUPPOSITORY','IV_BAG','INHALER','OTHER');
+    CREATE TYPE drug_form AS ENUM (
+      'TABLET','CAPSULE','SYRUP','INJECTION','DROPS','CREAM','OINTMENT',
+      'SUPPOSITORY','IV_BAG','INHALER','OTHER'
+    );
   END IF;
 
   IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'stock_move_type') THEN
@@ -70,18 +73,6 @@ CREATE TABLE IF NOT EXISTS drug_catalog (
 CREATE INDEX IF NOT EXISTS idx_drug_catalog_tenant ON drug_catalog(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_drug_catalog_name ON drug_catalog(tenant_id, generic_name);
 
--- ✅ Expression-based uniqueness (Postgres يسمح بها كـ UNIQUE INDEX فقط)
--- ✅ Expression-based uniqueness for lot identity (IMMUTABLE-safe)
-CREATE UNIQUE INDEX IF NOT EXISTS uq_stock_lots_key
-  ON stock_lots (
-    tenant_id,
-    warehouse_id,
-    drug_id,
-    COALESCE(lot_number,''),
-    COALESCE(expiry_date, 'infinity'::date)
-  );
-
-
 -- =========================
 -- Stock lots (batch/expiry) per warehouse+drug
 -- LOT-level tracking
@@ -102,14 +93,15 @@ CREATE TABLE IF NOT EXISTS stock_lots (
 CREATE INDEX IF NOT EXISTS idx_stock_lots_tenant_wh_drug
   ON stock_lots(tenant_id, warehouse_id, drug_id);
 
--- ✅ Expression-based uniqueness for lot identity
+-- ✅ IMMUTABLE-safe uniqueness for lot identity (no ::text casts)
+-- Treat NULL expiry as 'infinity' to keep uniqueness stable
 CREATE UNIQUE INDEX IF NOT EXISTS uq_stock_lots_key
   ON stock_lots (
     tenant_id,
     warehouse_id,
     drug_id,
     COALESCE(lot_number,''),
-    COALESCE(expiry_date::text,'')
+    COALESCE(expiry_date, 'infinity'::date)
   );
 
 -- =========================
