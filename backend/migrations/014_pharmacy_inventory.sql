@@ -71,15 +71,16 @@ CREATE INDEX IF NOT EXISTS idx_drug_catalog_tenant ON drug_catalog(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_drug_catalog_name ON drug_catalog(tenant_id, generic_name);
 
 -- ✅ Expression-based uniqueness (Postgres يسمح بها كـ UNIQUE INDEX فقط)
-CREATE UNIQUE INDEX IF NOT EXISTS uq_drug_catalog_key
-  ON drug_catalog (
+-- ✅ Expression-based uniqueness for lot identity (IMMUTABLE-safe)
+CREATE UNIQUE INDEX IF NOT EXISTS uq_stock_lots_key
+  ON stock_lots (
     tenant_id,
-    generic_name,
-    strength,
-    form,
-    COALESCE(route,''),
-    COALESCE(unit,'')
+    warehouse_id,
+    drug_id,
+    COALESCE(lot_number,''),
+    COALESCE(expiry_date, 'infinity'::date)
   );
+
 
 -- =========================
 -- Stock lots (batch/expiry) per warehouse+drug
