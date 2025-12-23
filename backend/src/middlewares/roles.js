@@ -13,13 +13,15 @@ function normalize(name) {
 }
 
 /**
+ * ✅ يدعم:
  * requireRole('ADMIN')
+ * requireRole('ADMIN', 'DOCTOR')
  * requireRole(['ADMIN', 'DOCTOR'])
+ * requireRole(['PHARMACY','ADMIN'], 'DOCTOR')
  */
-function requireRole(required) {
-  const neededRoles = Array.isArray(required)
-    ? required.map(normalize)
-    : [normalize(required)];
+function requireRole(...required) {
+  const flat = required.flat().filter(Boolean);
+  const neededRoles = flat.map(normalize).filter(Boolean);
 
   return (req, _res, next) => {
     const rolesRaw = Array.isArray(req.user?.roles) ? req.user.roles : [];
