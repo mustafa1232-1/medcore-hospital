@@ -1,4 +1,3 @@
-// src/modules/orders/orders.routes.js
 const express = require('express');
 
 const { requireAuth } = require('../../middlewares/auth');
@@ -14,6 +13,9 @@ const {
   createProcedureOrderSchema,
   listOrdersQuerySchema,
   cancelOrderSchema,
+  pharmacyPrepareSchema,
+  pharmacyPartialSchema,
+  pharmacyOutOfStockSchema,
 } = require('./orders.validators');
 
 const router = express.Router();
@@ -49,8 +51,9 @@ function requireAnyRole(roles) {
  * ✅ Policy:
  * - CREATE/CANCEL: DOCTOR فقط
  * - VIEW (List/Details): DOCTOR + NURSE + LAB + PHARMACY + ADMIN
+ * - PHARMACY actions: PHARMACY فقط
+ * - PATIENT view: PATIENT فقط (حسب نظامك)
  */
-
 const ORDERS_VIEW_ROLES = ['DOCTOR', 'NURSE', 'LAB', 'PHARMACY', 'ADMIN'];
 
 // List
@@ -125,6 +128,45 @@ router.post(
   requireRole('DOCTOR'),
   validateBody(cancelOrderSchema),
   ctrl.cancel
+);
+
+/** =========================
+ * ✅ Pharmacy actions
+ * ========================= */
+router.post(
+  '/:id/pharmacy/prepare',
+  requireAuth,
+  requireRole('PHARMACY'),
+  validateBody(pharmacyPrepareSchema),
+  ctrl.pharmacyPrepare
+);
+
+router.post(
+  '/:id/pharmacy/partial',
+  requireAuth,
+  requireRole('PHARMACY'),
+  validateBody(pharmacyPartialSchema),
+  ctrl.pharmacyPartial
+);
+
+router.post(
+  '/:id/pharmacy/out-of-stock',
+  requireAuth,
+  requireRole('PHARMACY'),
+  validateBody(pharmacyOutOfStockSchema),
+  ctrl.pharmacyOutOfStock
+);
+
+/** =========================
+ * ✅ Patient view
+ * ========================= *
+ * إذا عندك role اسمها PATIENT
+ */
+router.get(
+  '/patient/medications',
+  requireAuth,
+  requireRole('PATIENT'),
+  ctrl.listPatientMedications
 );
 
 module.exports = router;

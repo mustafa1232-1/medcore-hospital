@@ -1,3 +1,4 @@
+// src/modules/orders/orders.service.js
 const pool = require('../../db/pool');
 const { HttpError } = require('../../utils/httpError');
 
@@ -24,7 +25,6 @@ async function ensureAdmissionInTenant({ tenantId, admissionId }) {
 
   const a = rows[0];
   if (!a) throw new HttpError(404, 'Admission not found');
-
   return a;
 }
 
@@ -110,8 +110,8 @@ async function createTasksForOrderTx({ client, tenantId, order, activeBed, creat
 }
 
 /** ===========================
- *  NEW: Patient Log writer (داخل TX)
- *  =========================== */
+ *  Patient Log writer (داخل TX)
+ * =========================== */
 async function writePatientLogTx({
   client,
   tenantId,
@@ -122,8 +122,6 @@ async function writePatientLogTx({
   message,
   meta,
 }) {
-  // إذا جدول patient_log غير موجود بعد عندك، ستظهر مشكلة.
-  // لكن بما أننا أنشأناه سابقًا في module patient_log، فهذا طبيعي.
   await client.query(
     `
     INSERT INTO patient_log (
@@ -151,18 +149,15 @@ async function writePatientLogTx({
 }
 
 function orderSummaryMessage({ kind, payload }) {
-  if (kind === 'MEDICATION') {
-    return `تم إنشاء طلب دواء: ${payload?.medicationName || ''}`.trim();
-  }
-  if (kind === 'LAB') {
-    return `تم إنشاء طلب تحليل: ${payload?.testName || ''}`.trim();
-  }
-  if (kind === 'PROCEDURE') {
-    return `تم إنشاء طلب إجراء: ${payload?.procedureName || ''}`.trim();
-  }
+  if (kind === 'MEDICATION') return `تم إنشاء طلب دواء: ${payload?.medicationName || ''}`.trim();
+  if (kind === 'LAB') return `تم إنشاء طلب تحليل: ${payload?.testName || ''}`.trim();
+  if (kind === 'PROCEDURE') return `تم إنشاء طلب إجراء: ${payload?.procedureName || ''}`.trim();
   return 'تم إنشاء طلب';
 }
 
+/** ===========================
+ *  Create order TX
+ * =========================== */
 async function createOrderTx({
   tenantId,
   admissionId,
@@ -176,7 +171,6 @@ async function createOrderTx({
   try {
     await client.query('BEGIN');
 
-    // Admission lock
     const aQ = await client.query(
       `
       SELECT a.id, a.status, a.patient_id AS "patientId"
@@ -193,7 +187,6 @@ async function createOrderTx({
       throw new HttpError(403, 'يجب تعيين غرفة وسرير وتفعيل الدخول قبل تنفيذ أي إجراء');
     }
 
-    // Active bed assignment required
     const bedQ = await client.query(
       `
       SELECT
@@ -210,11 +203,8 @@ async function createOrderTx({
     );
 
     const activeBed = bedQ.rows[0];
-    if (!activeBed) {
-      throw new HttpError(403, 'يجب تعيين غرفة وسرير للمريض قبل تنفيذ أي إجراء');
-    }
+    if (!activeBed) throw new HttpError(403, 'يجب تعيين غرفة وسرير للمريض قبل تنفيذ أي إجراء');
 
-    // Create Order
     const oIns = await client.query(
       `
       INSERT INTO orders (
@@ -256,7 +246,6 @@ async function createOrderTx({
 
     const order = oIns.rows[0];
 
-    // Tasks
     const tasks = await createTasksForOrderTx({
       client,
       tenantId,
@@ -265,7 +254,6 @@ async function createOrderTx({
       createdByUserId,
     });
 
-    // ✅ NEW: log
     await writePatientLogTx({
       client,
       tenantId,
@@ -278,7 +266,7 @@ async function createOrderTx({
         orderId: order.id,
         kind: order.kind,
         payload: order.payload,
-        taskIds: tasks.map(t => t.id),
+        taskIds: tasks.map((t) => t.id),
       },
     });
 
@@ -357,13 +345,14 @@ async function getOrder({ tenantId, id }) {
     `,
     [tenantId, id]
   );
+
   if (!rows[0]) throw new HttpError(404, 'Order not found');
   return rows[0];
 }
 
 /** ===========================
- *  UPDATED: Cancel داخل TX + Log + Cancel tasks atomically
- *  =========================== */
+ *  Cancel TX + log + cancel tasks
+ * =========================== */
 async function cancelOrderTx({ tenantId, id, notes, cancelledByUserId }) {
   const client = await pool.connect();
   try {
@@ -389,7 +378,6 @@ async function cancelOrderTx({ tenantId, id, notes, cancelledByUserId }) {
     if (!order) throw new HttpError(404, 'Order not found');
 
     if (order.status === 'CANCELLED') {
-      // لا نكسر: رجّع نفس الطلب
       const full = await client.query(
         `
         SELECT
@@ -413,7 +401,6 @@ async function cancelOrderTx({ tenantId, id, notes, cancelledByUserId }) {
       return full.rows[0];
     }
 
-    // ✅ منع إلغاء مكتمل (منطقي)
     if (order.status === 'COMPLETED') {
       throw new HttpError(409, 'لا يمكن إلغاء طلب مكتمل');
     }
@@ -441,7 +428,6 @@ async function cancelOrderTx({ tenantId, id, notes, cancelledByUserId }) {
       [tenantId, id, notes || null]
     );
 
-    // Cancel related tasks (PENDING/STARTED فقط)
     const tUpd = await client.query(
       `
       UPDATE nursing_tasks
@@ -454,7 +440,6 @@ async function cancelOrderTx({ tenantId, id, notes, cancelledByUserId }) {
       [tenantId, id]
     );
 
-    // ✅ NEW: Log
     await writePatientLogTx({
       client,
       tenantId,
@@ -467,7 +452,7 @@ async function cancelOrderTx({ tenantId, id, notes, cancelledByUserId }) {
         orderId: id,
         kind: upd.rows[0].kind,
         payload: upd.rows[0].payload,
-        cancelledTasks: tUpd.rows.map(r => r.id),
+        cancelledTasks: tUpd.rows.map((r) => r.id),
         notes: notes || null,
       },
     });
@@ -482,10 +467,304 @@ async function cancelOrderTx({ tenantId, id, notes, cancelledByUserId }) {
   }
 }
 
+/** ===========================
+ *  Pharmacy actions (اللوجك الجديد payload.pharmacy)
+ * =========================== */
+async function _lockOrderTx(client, { tenantId, orderId }) {
+  const q = await client.query(
+    `
+    SELECT
+      o.id,
+      o.tenant_id AS "tenantId",
+      o.admission_id AS "admissionId",
+      o.patient_id AS "patientId",
+      o.kind,
+      o.status,
+      o.payload,
+      o.notes
+    FROM orders o
+    WHERE o.tenant_id = $1 AND o.id = $2
+    FOR UPDATE
+    `,
+    [tenantId, orderId]
+  );
+
+  const order = q.rows[0];
+  if (!order) throw new HttpError(404, 'Order not found');
+  return order;
+}
+
+function _num(x) {
+  const n = Number(x);
+  return Number.isFinite(n) ? n : null;
+}
+
+async function pharmacyPrepareTx({ tenantId, orderId, actorUserId, notes }) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const order = await _lockOrderTx(client, { tenantId, orderId });
+
+    if (order.kind !== 'MEDICATION') throw new HttpError(409, 'هذا الإجراء متاح فقط لطلبات الدواء');
+    if (order.status === 'CANCELLED') throw new HttpError(409, 'الطلب ملغي');
+
+    // إذا مكتمل بالفعل: نرجع order الحالي بدون تغيير
+    if (order.status === 'COMPLETED') {
+      await client.query('COMMIT');
+      return { order };
+    }
+
+    const payload = order.payload || {};
+    const requestedQty = _num(payload.requestedQty) ?? null;
+    const preparedQty = requestedQty; // FULL = requestedQty
+
+    payload.pharmacy = {
+      ...(payload.pharmacy || {}),
+      preparedQty,
+      preparedAt: new Date().toISOString(),
+      mode: 'FULL',
+      notes: notes || null,
+    };
+
+    const upd = await client.query(
+      `
+      UPDATE orders
+      SET status = 'COMPLETED'::order_status,
+          payload = $3::jsonb,
+          updated_at = now()
+      WHERE tenant_id = $1 AND id = $2
+      RETURNING
+        id,
+        admission_id AS "admissionId",
+        patient_id AS "patientId",
+        kind,
+        status,
+        payload,
+        notes,
+        created_at AS "createdAt",
+        updated_at AS "updatedAt"
+      `,
+      [tenantId, orderId, JSON.stringify(payload)]
+    );
+
+    await writePatientLogTx({
+      client,
+      tenantId,
+      patientId: upd.rows[0].patientId,
+      admissionId: upd.rows[0].admissionId,
+      actorUserId,
+      eventType: 'MED_ORDER_PREPARED',
+      message: 'تم تجهيز طلب الدواء بالكامل',
+      meta: { orderId, requestedQty, preparedQty, notes: notes || null },
+    });
+
+    await client.query('COMMIT');
+    return { order: upd.rows[0] };
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
+async function pharmacyPartialTx({ tenantId, orderId, preparedQty, actorUserId, notes }) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const order = await _lockOrderTx(client, { tenantId, orderId });
+
+    if (order.kind !== 'MEDICATION') throw new HttpError(409, 'هذا الإجراء متاح فقط لطلبات الدواء');
+    if (order.status === 'CANCELLED') throw new HttpError(409, 'الطلب ملغي');
+    if (order.status === 'COMPLETED') throw new HttpError(409, 'الطلب مكتمل بالفعل');
+
+    const payload = order.payload || {};
+    const requestedQty = _num(payload.requestedQty);
+
+    const pQty = _num(preparedQty);
+    if (!pQty || pQty <= 0) throw new HttpError(400, 'preparedQty غير صالح');
+
+    if (requestedQty != null && pQty > requestedQty) {
+      throw new HttpError(400, 'preparedQty لا يمكن أن يكون أكبر من requestedQty');
+    }
+
+    payload.pharmacy = {
+      ...(payload.pharmacy || {}),
+      preparedQty: pQty,
+      preparedAt: new Date().toISOString(),
+      mode: 'PARTIAL',
+      notes: notes || null,
+    };
+
+    const upd = await client.query(
+      `
+      UPDATE orders
+      SET status = 'PARTIALLY_COMPLETED'::order_status,
+          payload = $3::jsonb,
+          updated_at = now()
+      WHERE tenant_id = $1 AND id = $2
+      RETURNING
+        id,
+        admission_id AS "admissionId",
+        patient_id AS "patientId",
+        kind,
+        status,
+        payload,
+        notes,
+        created_at AS "createdAt",
+        updated_at AS "updatedAt"
+      `,
+      [tenantId, orderId, JSON.stringify(payload)]
+    );
+
+    await writePatientLogTx({
+      client,
+      tenantId,
+      patientId: upd.rows[0].patientId,
+      admissionId: upd.rows[0].admissionId,
+      actorUserId,
+      eventType: 'MED_ORDER_PARTIAL',
+      message: 'تم تجهيز طلب الدواء بشكل جزئي',
+      meta: { orderId, requestedQty: requestedQty ?? null, preparedQty: pQty, notes: notes || null },
+    });
+
+    await client.query('COMMIT');
+    return { order: upd.rows[0] };
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
+async function pharmacyOutOfStockTx({ tenantId, orderId, actorUserId, notes }) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const order = await _lockOrderTx(client, { tenantId, orderId });
+
+    if (order.kind !== 'MEDICATION') throw new HttpError(409, 'هذا الإجراء متاح فقط لطلبات الدواء');
+    if (order.status === 'CANCELLED') throw new HttpError(409, 'الطلب ملغي');
+    if (order.status === 'COMPLETED') throw new HttpError(409, 'الطلب مكتمل بالفعل');
+
+    const payload = order.payload || {};
+    const requestedQty = _num(payload.requestedQty) ?? null;
+
+    payload.pharmacy = {
+      ...(payload.pharmacy || {}),
+      outOfStockAt: new Date().toISOString(),
+      mode: 'OUT_OF_STOCK',
+      notes: notes || null,
+    };
+
+    const upd = await client.query(
+      `
+      UPDATE orders
+      SET status = 'OUT_OF_STOCK'::order_status,
+          payload = $3::jsonb,
+          updated_at = now()
+      WHERE tenant_id = $1 AND id = $2
+      RETURNING
+        id,
+        admission_id AS "admissionId",
+        patient_id AS "patientId",
+        kind,
+        status,
+        payload,
+        notes,
+        created_at AS "createdAt",
+        updated_at AS "updatedAt"
+      `,
+      [tenantId, orderId, JSON.stringify(payload)]
+    );
+
+    await writePatientLogTx({
+      client,
+      tenantId,
+      patientId: upd.rows[0].patientId,
+      admissionId: upd.rows[0].admissionId,
+      actorUserId,
+      eventType: 'MED_ORDER_OUT_OF_STOCK',
+      message: 'تم إبلاغ الطبيب بنفاد الكمية',
+      meta: { orderId, requestedQty, notes: notes || null },
+    });
+
+    await client.query('COMMIT');
+    return { order: upd.rows[0] };
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
+/** ===========================
+ *  Patient medication view (بدون status)
+ * =========================== */
+async function listPatientMedicationView({ tenantId, patientId, limit = 50, offset = 0 }) {
+  if (!patientId) throw new HttpError(400, 'patientId missing in token');
+
+  const { rows } = await pool.query(
+    `
+    SELECT
+      o.id,
+      o.admission_id AS "admissionId",
+      o.created_at AS "createdAt",
+      o.payload
+    FROM orders o
+    WHERE o.tenant_id = $1
+      AND o.patient_id = $2
+      AND o.kind = 'MEDICATION'::order_kind
+      AND o.status <> 'CANCELLED'::order_status
+    ORDER BY o.created_at DESC
+    LIMIT $3 OFFSET $4
+    `,
+    [tenantId, patientId, limit, offset]
+  );
+
+  const items = rows.map((r) => {
+    const p = r.payload || {};
+    return {
+      orderId: r.id,
+      admissionId: r.admissionId,
+      createdAt: r.createdAt,
+
+      medicationName: p.medicationName || null,
+      dose: p.dose || null,
+      route: p.route || null,
+      frequency: p.frequency || null,
+      duration: p.duration || null,
+
+      dosageText: p.dosageText ?? null,
+      frequencyText: p.frequencyText ?? null,
+      durationText: p.durationText ?? null,
+      withFood: p.withFood ?? null,
+      patientInstructionsAr: p.patientInstructionsAr ?? null,
+      patientInstructionsEn: p.patientInstructionsEn ?? null,
+      warningsText: p.warningsText ?? null,
+    };
+  });
+
+  // ✅ meta.total الصحيح = عدد النتائج الكلي (إذا تريد) يحتاج COUNT. حالياً مثل كودك: items.length
+  return { items, meta: { limit, offset, total: items.length } };
+}
+
 module.exports = {
+  ensureAdmissionInTenant,
+
   createOrderTx,
   listOrders,
   getOrder,
   cancelOrderTx,
-  ensureAdmissionInTenant,
+
+  pharmacyPrepareTx,
+  pharmacyPartialTx,
+  pharmacyOutOfStockTx,
+
+  listPatientMedicationView,
 };
