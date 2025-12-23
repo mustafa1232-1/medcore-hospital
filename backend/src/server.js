@@ -15,7 +15,7 @@ const usersRoutes = require('./modules/users/users.routes');
 const lookupsRoutes = require('./routes/lookups.routes');
 const patientsRoutes = require('./modules/patients/patients.routes');
 const admissionsRoutes = require('./modules/admissions/admissions.routes');
-const bedHistoryRoutes = require('../modules/bed_history/bed_history.routes');
+const bedHistoryRoutes = require('./modules/bed_history/bed_history.routes');
 // ✅ NEW
 const ordersRoutes = require('./modules/orders/orders.routes');
 const tasksRoutes = require('./modules/tasks/tasks.routes');
@@ -40,7 +40,7 @@ app.use('/api/facility', facilityRoutes);
 app.use('/api/lookups', lookupsRoutes);
 app.use('/api/patients', patientsRoutes);
 app.use('/api/admissions', admissionsRoutes);
-app.use('/api', bedHistoryRoutes);
+app.use('/api/bed-history', bedHistoryRoutes);
 // ✅ Orders & Tasks
 app.use('/api/orders', ordersRoutes);
 app.use('/api/tasks', tasksRoutes);
