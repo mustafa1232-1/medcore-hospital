@@ -1,4 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:mobile/src/core/auth/auth_store.dart';
+import 'package:mobile/src_v2/core/rbac/role_utils.dart';
+import 'package:provider/provider.dart';
+
 import '../../../../core/shell/v2_shell_scaffold.dart';
 import '../../../orders/data/api/beds_api_service_v2.dart';
 
@@ -21,9 +25,16 @@ class AdminRoomBedsPage extends StatefulWidget {
 class _AdminRoomBedsPageState extends State<AdminRoomBedsPage> {
   final _bedsApi = BedsApiServiceV2();
 
+  bool _disposed = false;
+  bool get _alive => mounted && !_disposed;
+
   bool _loading = true;
   String? _error;
   List<Map<String, dynamic>> _beds = const [];
+
+  bool _onlyActive = true;
+
+  bool _isAdmin(AuthStore auth) => RoleUtils.hasRole(auth.user, 'ADMIN');
 
   @override
   void initState() {
@@ -31,7 +42,15 @@ class _AdminRoomBedsPageState extends State<AdminRoomBedsPage> {
     _loadBeds();
   }
 
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
+  }
+
   Future<void> _loadBeds() async {
+    if (!_alive) return;
+
     setState(() {
       _loading = true;
       _error = null;
@@ -40,15 +59,16 @@ class _AdminRoomBedsPageState extends State<AdminRoomBedsPage> {
     try {
       final items = await _bedsApi.listBeds(
         roomId: widget.roomId,
-        active: true,
+        active: _onlyActive ? true : null,
       );
-      if (!mounted) return;
+
+      if (!_alive) return;
       setState(() {
         _beds = items;
         _loading = false;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!_alive) return;
       setState(() {
         _error = e.toString();
         _loading = false;
@@ -56,8 +76,84 @@ class _AdminRoomBedsPageState extends State<AdminRoomBedsPage> {
     }
   }
 
+  // =========================
+  // ✅ Add beds (count only) - FIXED (no controller)
+  // =========================
+  Future<void> _addBedsCountOnly() async {
+    if (!_alive) return;
+
+    String countText = '1';
+
+    final ok = await showDialog<bool>(
+      context: context,
+      barrierDismissible: true, // يسمح بالخروج بدون مشاكل
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx2, setLocal) => AlertDialog(
+            title: const Text('إضافة أسرة'),
+            content: TextFormField(
+              initialValue: countText,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: 'عدد الأسرة',
+                border: OutlineInputBorder(),
+              ),
+              onChanged: (v) => setLocal(() => countText = v),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  FocusScope.of(ctx2).unfocus(); // ✅ مهم جداً
+                  Navigator.pop(ctx2, false);
+                },
+                child: const Text('إلغاء'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  FocusScope.of(ctx2).unfocus(); // ✅ مهم جداً
+                  Navigator.pop(ctx2, true);
+                },
+                child: const Text('إضافة'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (!_alive) return;
+    if (ok != true) return;
+
+    final n = int.tryParse(countText.trim()) ?? 0;
+    if (n <= 0) {
+      _showErr('أدخل رقم صحيح');
+      return;
+    }
+
+    try {
+      _showBusy('جارٍ الإضافة...');
+      for (int i = 0; i < n; i++) {
+        await _bedsApi.createBed(
+          roomId: widget.roomId,
+          code: '', // backend generates
+          status: 'AVAILABLE',
+          notes: null,
+          isActive: true,
+        );
+      }
+      if (!_alive) return;
+      _showOk('تمت إضافة $n سرير');
+      await _loadBeds();
+    } catch (e) {
+      if (!_alive) return;
+      _showErr(e.toString());
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final auth = context.watch<AuthStore>();
+
     final header = (widget.roomName?.trim().isNotEmpty ?? false)
         ? widget.roomName!.trim()
         : (widget.roomCode?.trim().isNotEmpty ?? false)
@@ -67,6 +163,12 @@ class _AdminRoomBedsPageState extends State<AdminRoomBedsPage> {
     return V2ShellScaffold(
       title: header,
       actions: [
+        if (_isAdmin(auth))
+          IconButton(
+            onPressed: _addBedsCountOnly,
+            icon: const Icon(Icons.add_rounded),
+            tooltip: 'إضافة أسرة',
+          ),
         IconButton(
           onPressed: _loadBeds,
           icon: const Icon(Icons.refresh_rounded),
@@ -79,9 +181,20 @@ class _AdminRoomBedsPageState extends State<AdminRoomBedsPage> {
           padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
           children: [
             _headerCard(context),
-
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                FilterChip(
+                  selected: _onlyActive,
+                  label: const Text('فعّالة فقط'),
+                  onSelected: (v) {
+                    setState(() => _onlyActive = v);
+                    _loadBeds();
+                  },
+                ),
+              ],
+            ),
             const SizedBox(height: 12),
-
             if (_loading)
               const Padding(
                 padding: EdgeInsets.only(top: 40),
@@ -149,7 +262,7 @@ class _AdminRoomBedsPageState extends State<AdminRoomBedsPage> {
 
   Widget _bedTile(Map<String, dynamic> b) {
     final code = (b['code'] ?? '').toString();
-    final status = (b['status'] ?? '').toString(); // AVAILABLE/OCCUPIED/...
+    final status = (b['status'] ?? '').toString();
     final notes = (b['notes'] ?? '').toString();
     final isActive = (b['is_active'] ?? b['isActive'] ?? true) == true;
 
@@ -165,7 +278,7 @@ class _AdminRoomBedsPageState extends State<AdminRoomBedsPage> {
           ),
         ),
         title: Text(
-          code.isEmpty ? 'Bed' : code,
+          code.isEmpty ? 'سرير' : code,
           style: const TextStyle(fontWeight: FontWeight.w900),
         ),
         subtitle: Text(
@@ -209,12 +322,7 @@ class _AdminRoomBedsPageState extends State<AdminRoomBedsPage> {
     Color fill;
     Color text;
 
-    // بدون تحديد ألوان ثابتة "غريبة" — نعتمد على primary/error مع شفافية
-    if (!isActive) {
-      border = theme.colorScheme.error.withAlpha(70);
-      fill = theme.colorScheme.error.withAlpha(10);
-      text = theme.colorScheme.error;
-    } else if (s == 'OCCUPIED') {
+    if (!isActive || s == 'OCCUPIED') {
       border = theme.colorScheme.error.withAlpha(70);
       fill = theme.colorScheme.error.withAlpha(10);
       text = theme.colorScheme.error;
@@ -240,6 +348,30 @@ class _AdminRoomBedsPageState extends State<AdminRoomBedsPage> {
           fontSize: 12,
           color: text,
         ),
+      ),
+    );
+  }
+
+  void _showBusy(String msg) {
+    if (!_alive) return;
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      SnackBar(content: Text(msg), duration: const Duration(milliseconds: 900)),
+    );
+  }
+
+  void _showOk(String msg) {
+    if (!_alive) return;
+    ScaffoldMessenger.maybeOf(
+      context,
+    )?.showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  void _showErr(String msg) {
+    if (!_alive) return;
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: Theme.of(context).colorScheme.error,
       ),
     );
   }

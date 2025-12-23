@@ -5,7 +5,8 @@ function tenantId(req) {
 }
 
 function userId(req) {
-  return req.user.sub;
+  // ✅ مرونة: بعض JWT يضع id في sub
+  return req.user.id || req.user.sub;
 }
 
 async function createMedication(req, res, next) {
@@ -78,7 +79,6 @@ async function createProcedure(req, res, next) {
 
 async function list(req, res, next) {
   try {
-    // validators ستنظف query في routes
     const result = await svc.listOrders({
       tenantId: tenantId(req),
       query: req.query,
@@ -96,10 +96,11 @@ async function getOne(req, res, next) {
 
 async function cancel(req, res, next) {
   try {
-    const order = await svc.cancelOrder({
+    const order = await svc.cancelOrderTx({
       tenantId: tenantId(req),
       id: req.params.id,
       notes: req.body.notes,
+      cancelledByUserId: userId(req),
     });
     res.json({ data: order });
   } catch (e) { next(e); }

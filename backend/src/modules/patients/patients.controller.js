@@ -6,7 +6,6 @@ module.exports = {
     try {
       const tenantId = req.user.tenantId;
 
-      // ✅ نمرر Query كما هو للسيرفس (بدون تغيير أي routes)
       const result = await patientsService.listPatients({
         tenantId,
         query: req.query,
@@ -46,13 +45,47 @@ module.exports = {
       const tenantId = req.user.tenantId;
       const patientId = req.params.id;
 
-      const patient = await patientsService.updatePatient(
+      const patient = await patientsService.updatePatient(tenantId, patientId, req.body);
+      return res.json(patient);
+    } catch (err) {
+      return next(err);
+    }
+  },
+
+  // ✅ NEW
+  async getPatientMedicalRecord(req, res, next) {
+    try {
+      const tenantId = req.user.tenantId;
+      const patientId = req.params.id;
+
+      const limit = req.query.limit;
+      const offset = req.query.offset;
+
+      const data = await patientsService.getPatientMedicalRecord({
         tenantId,
         patientId,
-        req.body
-      );
+        limit,
+        offset,
+      });
 
-      return res.json(patient);
+      return res.json({ data });
+    } catch (err) {
+      return next(err);
+    }
+  },
+
+  // ✅ NEW
+  async getPatientHealthAdvice(req, res, next) {
+    try {
+      const tenantId = req.user.tenantId;
+      const patientId = req.params.id;
+
+      const data = await patientsService.getPatientHealthAdvice({
+        tenantId,
+        patientId,
+      });
+
+      return res.json({ data });
     } catch (err) {
       return next(err);
     }

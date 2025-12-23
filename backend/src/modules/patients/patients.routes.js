@@ -7,31 +7,28 @@ const { requireRole } = require('../../middlewares/roles');
 const { validateBody } = require('../../middlewares/validate');
 
 const patientsController = require('./patients.controller');
-const {
-  createPatientSchema,
-  updatePatientSchema,
-} = require('./patients.validators');
+const { createPatientSchema, updatePatientSchema } = require('./patients.validators');
 
 /**
  * Roles:
- * - RECEPTION: create + list + view
- * - DOCTOR: list + view
+ * - RECEPTION: create + update + list + view + medical record
+ * - DOCTOR: list + view + medical record + advice
  * - ADMIN: full access
  */
 
-// List patients (search by name / phone)
+// List patients
 router.get(
   '/',
   requireAuth,
-  requireRole('RECEPTION', 'ADMIN' , 'DOCTOR'),
+  requireRole('RECEPTION', 'ADMIN', 'DOCTOR'),
   patientsController.listPatients
 );
 
-// Create patient (Reception/Admin)
+// Create patient (Reception/Admin فقط)
 router.post(
   '/',
   requireAuth,
-  requireRole('RECEPTION', 'ADMIN' , 'DOCTOR'),
+  requireRole('RECEPTION', 'ADMIN'),
   validateBody(createPatientSchema),
   patientsController.createPatient
 );
@@ -40,17 +37,33 @@ router.post(
 router.get(
   '/:id',
   requireAuth,
-  requireRole('RECEPTION', 'ADMIN' , 'DOCTOR'),
+  requireRole('RECEPTION', 'ADMIN', 'DOCTOR'),
   patientsController.getPatientById
 );
 
-// Update patient basic info
+// Update patient basic info (Reception/Admin فقط)
 router.patch(
   '/:id',
   requireAuth,
-  requireRole('RECEPTION', 'ADMIN' , 'DOCTOR'),
+  requireRole('RECEPTION', 'ADMIN'),
   validateBody(updatePatientSchema),
   patientsController.updatePatient
+);
+
+// ✅ NEW: Patient Medical Record (History + Logs + Files + Admissions + Bed timeline)
+router.get(
+  '/:id/medical-record',
+  requireAuth,
+  requireRole('RECEPTION', 'ADMIN', 'DOCTOR'),
+  patientsController.getPatientMedicalRecord
+);
+
+// ✅ NEW: Health advice by current department (based on active admission bed)
+router.get(
+  '/:id/health-advice',
+  requireAuth,
+  requireRole('RECEPTION', 'ADMIN', 'DOCTOR'),
+  patientsController.getPatientHealthAdvice
 );
 
 module.exports = router;

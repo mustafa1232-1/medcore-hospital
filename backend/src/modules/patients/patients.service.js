@@ -20,11 +20,7 @@ function clampInt(n, { min, max, fallback }) {
 async function listPatients(input) {
   const {
     tenantId,
-
-    // ✅ الجديد
     query,
-
-    // ✅ القديم (للتوافق وعدم كسر أي استدعاء قديم)
     q: qOld,
     phone: phoneOld,
     gender: genderOld,
@@ -39,7 +35,6 @@ async function listPatients(input) {
 
   if (!tenantId) throw new HttpError(400, 'Missing tenantId');
 
-  // ✅ مصدر القيم: query أولاً، وإذا غير موجود نرجع للقديم
   const q = query?.q ?? qOld;
   const phone = query?.phone ?? phoneOld;
   const gender = query?.gender ?? genderOld;
@@ -55,28 +50,24 @@ async function listPatients(input) {
   const params = [tenantId];
   let i = 2;
 
-  // q: search by name or phone (case-insensitive)
   if (q) {
     params.push(`%${String(q).toLowerCase()}%`);
     where.push(`(LOWER(p.full_name) LIKE $${i} OR p.phone LIKE $${i})`);
     i++;
   }
 
-  // phone contains
   if (phone) {
     params.push(`%${String(phone)}%`);
     where.push(`p.phone LIKE $${i}`);
     i++;
   }
 
-  // gender exact
   if (gender) {
     params.push(String(gender));
     where.push(`p.gender = $${i}`);
     i++;
   }
 
-  // isActive exact
   const activeBool = toBool(isActive);
   if (activeBool !== undefined) {
     params.push(activeBool);
@@ -84,7 +75,6 @@ async function listPatients(input) {
     i++;
   }
 
-  // date_of_birth range
   if (dobFrom) {
     params.push(dobFrom);
     where.push(`p.date_of_birth >= $${i}::date`);
@@ -96,7 +86,6 @@ async function listPatients(input) {
     i++;
   }
 
-  // created_at range
   if (createdFrom) {
     params.push(createdFrom);
     where.push(`p.created_at >= $${i}::timestamptz`);
@@ -111,14 +100,12 @@ async function listPatients(input) {
   const safeLimit = clampInt(limit, { min: 1, max: 100, fallback: 20 });
   const safeOffset = clampInt(offset, { min: 0, max: 1000000, fallback: 0 });
 
-  // count
   const countQ = await pool.query(
     `SELECT COUNT(*)::int AS count FROM patients p WHERE ${where.join(' AND ')}`,
     params
   );
   const total = countQ.rows[0]?.count || 0;
 
-  // list
   params.push(safeLimit, safeOffset);
 
   const listSql = `
@@ -144,27 +131,14 @@ async function listPatients(input) {
 
   return {
     items: rows,
-    meta: {
-      total,
-      limit: safeLimit,
-      offset: safeOffset,
-    },
+    meta: { total, limit: safeLimit, offset: safeOffset },
   };
 }
 
 async function createPatient(tenantId, data) {
   if (!tenantId) throw new HttpError(400, 'Missing tenantId');
 
-  const {
-    fullName,
-    phone,
-    email,
-    gender,
-    dateOfBirth,
-    nationalId,
-    address,
-    notes,
-  } = data;
+  const { fullName, phone, email, gender, dateOfBirth, nationalId, address, notes } = data;
 
   try {
     const q = await pool.query(
@@ -301,9 +275,242 @@ async function updatePatient(tenantId, patientId, data) {
   return q.rows[0];
 }
 
+/** ===========================
+ *  NEW: Patient Medical Record (ربط اللوك + التاريخ + الملفات)
+ *  =========================== */
+
+async function getPatientMedicalRecord({ tenantId, patientId, limit, offset }) {
+  if (!tenantId) throw new HttpError(400, 'Missing tenantId');
+
+  // تأكد أن المريض موجود
+  const patient = await getPatientById(tenantId, patientId);
+
+  const safeLimit = clampInt(limit, { min: 1, max: 200, fallback: 50 });
+  const safeOffset = clampInt(offset, { min: 0, max: 1000000, fallback: 0 });
+
+  // Admissions + active bed snapshot (إن وجدت)
+  const admissionsQ = await pool.query(
+    `
+    SELECT
+      a.id,
+      a.status,
+      a.reason,
+      a.notes,
+      a.created_by_user_id AS "createdByUserId",
+      a.assigned_doctor_user_id AS "assignedDoctorUserId",
+      a.started_at AS "startedAt",
+      a.ended_at AS "endedAt",
+      a.created_at AS "createdAt",
+
+      ab.bed_id AS "bedId",
+      b.room_id AS "roomId",
+      b.code AS "bedCode",
+      r.code AS "roomCode",
+      r.department_id AS "departmentId",
+      d.code AS "departmentCode"
+    FROM admissions a
+    LEFT JOIN admission_beds ab
+      ON ab.admission_id = a.id AND ab.tenant_id = a.tenant_id AND ab.is_active = true
+    LEFT JOIN beds b
+      ON b.id = ab.bed_id AND b.tenant_id = a.tenant_id
+    LEFT JOIN rooms r
+      ON r.id = b.room_id AND r.tenant_id = a.tenant_id
+    LEFT JOIN departments d
+      ON d.id = r.department_id AND d.tenant_id = a.tenant_id
+    WHERE a.tenant_id = $1 AND a.patient_id = $2
+    ORDER BY a.created_at DESC
+    LIMIT $3 OFFSET $4
+    `,
+    [tenantId, patientId, safeLimit, safeOffset]
+  );
+
+  // Bed History (كل سجل أسرة مرّ بها)
+  const bedHistoryQ = await pool.query(
+    `
+    SELECT
+      bh.id,
+      bh.bed_id AS "bedId",
+      bh.room_id AS "roomId",
+      bh.department_id AS "departmentId",
+      bh.admission_id AS "admissionId",
+      bh.assigned_at AS "assignedAt",
+      bh.released_at AS "releasedAt",
+      bh.reason,
+      bh.actor_user_id AS "actorUserId",
+      bh.notes,
+      bh.created_at AS "createdAt",
+
+      b.code AS "bedCode",
+      r.code AS "roomCode",
+      d.code AS "departmentCode"
+    FROM bed_history bh
+    LEFT JOIN beds b ON b.id = bh.bed_id
+    LEFT JOIN rooms r ON r.id = bh.room_id
+    LEFT JOIN departments d ON d.id = bh.department_id
+    WHERE bh.tenant_id = $1 AND bh.patient_id = $2
+    ORDER BY bh.assigned_at DESC
+    LIMIT 200
+    `,
+    [tenantId, patientId]
+  );
+
+  // Patient Log (اللوك)
+  const logsQ = await pool.query(
+    `
+    SELECT
+      pl.id,
+      pl.admission_id AS "admissionId",
+      pl.event_type AS "eventType",
+      pl.message,
+      pl.meta,
+      pl.actor_user_id AS "actorUserId",
+      pl.created_at AS "createdAt",
+
+      u.name AS "actorName",
+      u.staff_code AS "actorStaffCode"
+    FROM patient_log pl
+    LEFT JOIN users u ON u.id = pl.actor_user_id AND u.tenant_id = pl.tenant_id
+    WHERE pl.tenant_id = $1 AND pl.patient_id = $2
+    ORDER BY pl.created_at DESC
+    LIMIT 300
+    `,
+    [tenantId, patientId]
+  );
+
+  // Patient Files (الأرشيف)
+  const filesQ = await pool.query(
+    `
+    SELECT
+      pf.id,
+      pf.admission_id AS "admissionId",
+      pf.kind,
+      pf.storage_key AS "storageKey",
+      pf.filename,
+      pf.mime_type AS "mimeType",
+      pf.size_bytes AS "sizeBytes",
+      pf.uploaded_by_user_id AS "uploadedByUserId",
+      pf.created_at AS "createdAt"
+    FROM patient_files pf
+    WHERE pf.tenant_id = $1 AND pf.patient_id = $2
+    ORDER BY pf.created_at DESC
+    LIMIT 300
+    `,
+    [tenantId, patientId]
+  );
+
+  return {
+    patient,
+    admissions: admissionsQ.rows,
+    bedHistory: bedHistoryQ.rows,
+    logs: logsQ.rows,
+    files: filesQ.rows,
+    meta: { admissionsLimit: safeLimit, admissionsOffset: safeOffset },
+  };
+}
+
+/** ===========================
+ *  NEW: Health Advice حسب القسم الحالي
+ *  =========================== */
+
+function adviceCatalogByDepartmentCode(departmentCode) {
+  const code = String(departmentCode || '').toUpperCase().trim();
+
+  // قواعد بسيطة الآن (نطوّرها لاحقًا لتكون من جدول)
+  const base = [
+    'اشرب ماء بكميات مناسبة حسب توجيه الطبيب.',
+    'التزم بمواعيد الأدوية ولا توقف علاج بدون استشارة.',
+    'نَمْ بشكل كافٍ وابتعد عن التدخين إن أمكن.',
+  ];
+
+  const map = {
+    ORTHO: [
+      'زاد بروتينك (بيض/دجاج/سمك/بقوليات) لدعم الالتئام.',
+      'احصل على فيتامين D وكالسيوم (حسب التحاليل وتوجيه الطبيب).',
+      'اتبع برنامج العلاج الطبيعي ولا تُحمّل الوزن قبل السماح الطبي.',
+    ],
+    ER: [
+      'راقب الأعراض التحذيرية وارجع للطوارئ إذا ساءت الحالة.',
+      'تجنب القيادة إن كنت تتناول مسكنات قوية أو مهدئات.',
+    ],
+    ICU: [
+      'التزم بخطة الفريق الطبي بدقة، وامنح الجسم وقتًا للتعافي.',
+      'أي تغيّر بالتنفس/الوعي يجب الإبلاغ عنه فورًا.',
+    ],
+    PED: [
+      'تأكد من السوائل والتغذية الخفيفة حسب العمر.',
+      'راقب الحرارة واتبع إرشادات خافض الحرارة بدقة.',
+    ],
+    OBGYN: [
+      'التزم بمكملات الحمل إن كانت موصوفة.',
+      'راجع الطبيب فورًا عند نزف/ألم شديد/انقباضات غير طبيعية.',
+    ],
+  };
+
+  return [...base, ...(map[code] || [])];
+}
+
+async function getPatientHealthAdvice({ tenantId, patientId }) {
+  if (!tenantId) throw new HttpError(400, 'Missing tenantId');
+
+  // تأكد المريض موجود
+  await getPatientById(tenantId, patientId);
+
+  // نجيب القسم الحالي من active admission bed (إن وجد)
+  const q = await pool.query(
+    `
+    SELECT
+      d.code AS "departmentCode",
+      d.name AS "departmentName",
+      r.code AS "roomCode",
+      b.code AS "bedCode"
+    FROM admissions a
+    JOIN admission_beds ab
+      ON ab.tenant_id = a.tenant_id AND ab.admission_id = a.id AND ab.is_active = true
+    JOIN beds b
+      ON b.tenant_id = a.tenant_id AND b.id = ab.bed_id
+    JOIN rooms r
+      ON r.tenant_id = a.tenant_id AND r.id = b.room_id
+    JOIN departments d
+      ON d.tenant_id = a.tenant_id AND d.id = r.department_id
+    WHERE a.tenant_id = $1 AND a.patient_id = $2
+      AND a.status IN ('ACTIVE','PENDING')
+    ORDER BY a.created_at DESC
+    LIMIT 1
+    `,
+    [tenantId, patientId]
+  );
+
+  const row = q.rows[0];
+
+  // إذا ليس منوّم الآن
+  if (!row) {
+    return {
+      current: null,
+      advice: [
+        'لا توجد إقامة فعّالة حالياً. حافظ على نمط حياة صحي وراجع الطبيب عند الحاجة.',
+        'احجز متابعة دورية إذا كنت تعاني من أعراض مستمرة.',
+      ],
+    };
+  }
+
+  return {
+    current: {
+      departmentCode: row.departmentCode,
+      departmentName: row.departmentName,
+      roomCode: row.roomCode,
+      bedCode: row.bedCode,
+    },
+    advice: adviceCatalogByDepartmentCode(row.departmentCode),
+  };
+}
+
 module.exports = {
   listPatients,
   createPatient,
   getPatientById,
   updatePatient,
+
+  // NEW
+  getPatientMedicalRecord,
+  getPatientHealthAdvice,
 };

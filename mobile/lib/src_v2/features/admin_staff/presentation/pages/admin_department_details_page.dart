@@ -7,7 +7,6 @@ import '../../../../core/rbac/role_utils.dart';
 
 import '../../../orders/data/api/rooms_api_service_v2.dart';
 import '../../../orders/data/api/departments_api_service_v2.dart';
-
 import '../../../orders/data/api/users_api_service_v2.dart';
 
 import 'admin_room_beds_page.dart';
@@ -33,24 +32,24 @@ class _AdminDepartmentDetailsPageState
     extends State<AdminDepartmentDetailsPage> {
   final _roomsApi = RoomsApiServiceV2();
   final _depsApi = DepartmentsApiServiceV2();
-  final _usersApi = UsersApiServiceV2(); // ✅ used for move/remove
+  final _usersApi = UsersApiServiceV2();
 
   final _q = TextEditingController();
+
+  bool _disposed = false;
+  bool get _alive => mounted && !_disposed;
 
   bool _loading = true;
   String? _error;
 
-  // Rooms
   List<Map<String, dynamic>> _rooms = const [];
   bool _onlyActive = true;
 
-  // Staff (from overview)
   bool _staffLoading = true;
   String? _staffError;
   List<Map<String, dynamic>> _doctors = const [];
   List<Map<String, dynamic>> _nurses = const [];
 
-  // Departments cache for move dialog
   List<Map<String, dynamic>> _allActiveDepartments = const [];
   bool _depsLoading = false;
 
@@ -62,8 +61,23 @@ class _AdminDepartmentDetailsPageState
 
   @override
   void dispose() {
+    _disposed = true;
     _q.dispose();
     super.dispose();
+  }
+
+  bool _isAdmin(AuthStore auth) => RoleUtils.hasRole(auth.user, 'ADMIN');
+  bool _isDoctor(AuthStore auth) => RoleUtils.hasRole(auth.user, 'DOCTOR');
+
+  String _currentUserId(AuthStore auth) => (auth.user?['id'] ?? '').toString();
+
+  bool _canManageDoctors(AuthStore auth) => _isAdmin(auth);
+  bool _canManageNurses(AuthStore auth) => _isAdmin(auth) || _isDoctor(auth);
+
+  bool _isSelf(AuthStore auth, Map<String, dynamic> staffUser) {
+    final me = _currentUserId(auth);
+    final uid = (staffUser['id'] ?? '').toString();
+    return me.isNotEmpty && uid.isNotEmpty && me == uid;
   }
 
   Future<void> _loadAll() async {
@@ -71,6 +85,8 @@ class _AdminDepartmentDetailsPageState
   }
 
   Future<void> _loadStaff() async {
+    if (!_alive) return;
+
     setState(() {
       _staffLoading = true;
       _staffError = null;
@@ -96,14 +112,14 @@ class _AdminDepartmentDetailsPageState
           .map((e) => e.cast<String, dynamic>())
           .toList();
 
-      if (!mounted) return;
+      if (!_alive) return;
       setState(() {
         _doctors = docs;
         _nurses = nrs;
         _staffLoading = false;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!_alive) return;
       setState(() {
         _staffError = e.toString();
         _staffLoading = false;
@@ -112,6 +128,8 @@ class _AdminDepartmentDetailsPageState
   }
 
   Future<void> _loadRooms() async {
+    if (!_alive) return;
+
     setState(() {
       _loading = true;
       _error = null;
@@ -124,13 +142,13 @@ class _AdminDepartmentDetailsPageState
         active: _onlyActive ? true : null,
       );
 
-      if (!mounted) return;
+      if (!_alive) return;
       setState(() {
         _rooms = items;
         _loading = false;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!_alive) return;
       setState(() {
         _error = e.toString();
         _loading = false;
@@ -138,15 +156,99 @@ class _AdminDepartmentDetailsPageState
     }
   }
 
+  // =========================
+  // ✅ Add rooms (count only) - FIXED (no controller)
+  // =========================
+  Future<void> _addRoomsCountOnly() async {
+    if (!_alive) return;
+
+    String countText = '1';
+
+    final ok = await showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx2, setLocal) => AlertDialog(
+            title: const Text('إضافة غرف'),
+            content: TextFormField(
+              initialValue: countText,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: 'عدد الغرف',
+                border: OutlineInputBorder(),
+              ),
+              onChanged: (v) => setLocal(() => countText = v),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  FocusScope.of(ctx2).unfocus(); // ✅ مهم
+                  Navigator.pop(ctx2, false);
+                },
+                child: const Text('إلغاء'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  FocusScope.of(ctx2).unfocus(); // ✅ مهم
+                  Navigator.pop(ctx2, true);
+                },
+                child: const Text('إضافة'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (!_alive) return;
+    if (ok != true) return;
+
+    final n = int.tryParse(countText.trim()) ?? 0;
+    if (n <= 0) {
+      _showErrSnack('أدخل رقم صحيح');
+      return;
+    }
+
+    try {
+      _showBusySnack('جارٍ الإضافة...');
+
+      final existing = await _roomsApi.listRooms(
+        departmentId: widget.departmentId,
+        query: '',
+        active: null,
+      );
+      final startIndex = existing.length;
+
+      for (int i = 1; i <= n; i++) {
+        final seq = startIndex + i;
+        await _roomsApi.createRoom(
+          departmentId: widget.departmentId,
+          name: 'غرفة $seq',
+          code: '', // backend generates
+          floor: null,
+          isActive: true,
+        );
+      }
+
+      if (!_alive) return;
+      _showOkSnack('تمت إضافة $n غرفة');
+      await _loadRooms();
+    } catch (e) {
+      if (!_alive) return;
+      _showErrSnack(e.toString());
+    }
+  }
+
   Future<void> _ensureDepartmentsLoaded() async {
     if (_allActiveDepartments.isNotEmpty || _depsLoading) return;
+    if (!_alive) return;
 
     setState(() => _depsLoading = true);
     try {
       final deps = await _depsApi.listDepartments(active: true);
-      if (!mounted) return;
+      if (!_alive) return;
 
-      // Remove current department from move options
       final filtered = deps.where((d) {
         final id = (d['id'] ?? '').toString();
         return id.isNotEmpty && id != widget.departmentId;
@@ -154,95 +256,71 @@ class _AdminDepartmentDetailsPageState
 
       setState(() => _allActiveDepartments = filtered);
     } catch (_) {
-      // silent; dialog will show empty list
+      // silent
     } finally {
-      if (mounted) setState(() => _depsLoading = false);
+      if (_alive) setState(() => _depsLoading = false);
     }
   }
 
-  // =========================
-  // ✅ Permissions
-  // =========================
-  bool _isAdmin(AuthStore auth) => RoleUtils.hasRole(auth.user, 'ADMIN');
-  bool _isDoctor(AuthStore auth) => RoleUtils.hasRole(auth.user, 'DOCTOR');
-
-  String _currentUserId(AuthStore auth) => (auth.user?['id'] ?? '').toString();
-
-  bool _canManageDoctors(AuthStore auth) {
-    // ADMIN only
-    return _isAdmin(auth);
-  }
-
-  bool _canManageNurses(AuthStore auth) {
-    // ADMIN or DOCTOR
-    return _isAdmin(auth) || _isDoctor(auth);
-  }
-
-  bool _isSelf(AuthStore auth, Map<String, dynamic> staffUser) {
-    final me = _currentUserId(auth);
-    final uid = (staffUser['id'] ?? '').toString();
-    return me.isNotEmpty && uid.isNotEmpty && me == uid;
-  }
-
-  // =========================
-  // ✅ Actions (Move/Remove)
-  // =========================
   Future<void> _removeFromDepartment(Map<String, dynamic> staff) async {
+    if (!_alive) return;
+
     final uid = (staff['id'] ?? '').toString();
     final name = (staff['fullName'] ?? staff['full_name'] ?? '').toString();
 
     final ok = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (ctx) => AlertDialog(
         title: const Text('إزالة من القسم'),
         content: Text('هل تريد إزالة "$name" من هذا القسم؟'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, false),
+            onPressed: () => Navigator.pop(ctx, false),
             child: const Text('إلغاء'),
           ),
           FilledButton(
-            onPressed: () => Navigator.pop(context, true),
+            onPressed: () => Navigator.pop(ctx, true),
             child: const Text('إزالة'),
           ),
         ],
       ),
     );
 
+    if (!_alive) return;
     if (ok != true) return;
 
     try {
       _showBusySnack('جارٍ الإزالة...');
       await _usersApi.updateUserDepartment(userId: uid, departmentId: null);
-      if (!mounted) return;
+      if (!_alive) return;
       _showOkSnack('تمت الإزالة');
       await _loadStaff();
     } catch (e) {
-      if (!mounted) return;
+      if (!_alive) return;
       _showErrSnack(e.toString());
     }
   }
 
   Future<void> _moveToAnotherDepartment(Map<String, dynamic> staff) async {
+    if (!_alive) return;
+
     await _ensureDepartmentsLoaded();
 
     final uid = (staff['id'] ?? '').toString();
     final name = (staff['fullName'] ?? staff['full_name'] ?? '').toString();
 
     String? selectedDeptId;
+
     final ok = await showDialog<bool>(
       context: context,
-      builder: (_) {
+      builder: (ctx) {
         return StatefulBuilder(
-          builder: (ctx, setLocal) => AlertDialog(
+          builder: (ctx2, setLocal) => AlertDialog(
             title: const Text('تحويل إلى قسم آخر'),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  'اختر القسم الجديد لـ "$name":',
-                  textAlign: TextAlign.start,
-                ),
+                Text('اختر القسم الجديد لـ "$name":'),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
                   value: selectedDeptId,
@@ -274,13 +352,13 @@ class _AdminDepartmentDetailsPageState
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
+                onPressed: () => Navigator.pop(ctx2, false),
                 child: const Text('إلغاء'),
               ),
               FilledButton(
-                onPressed: (selectedDeptId == null)
+                onPressed: selectedDeptId == null
                     ? null
-                    : () => Navigator.pop(ctx, true),
+                    : () => Navigator.pop(ctx2, true),
                 child: const Text('تحويل'),
               ),
             ],
@@ -289,6 +367,7 @@ class _AdminDepartmentDetailsPageState
       },
     );
 
+    if (!_alive) return;
     if (ok != true || selectedDeptId == null) return;
 
     try {
@@ -297,32 +376,13 @@ class _AdminDepartmentDetailsPageState
         userId: uid,
         departmentId: selectedDeptId,
       );
-      if (!mounted) return;
+      if (!_alive) return;
       _showOkSnack('تم التحويل');
       await _loadStaff();
     } catch (e) {
-      if (!mounted) return;
+      if (!_alive) return;
       _showErrSnack(e.toString());
     }
-  }
-
-  void _showBusySnack(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg), duration: const Duration(milliseconds: 900)),
-    );
-  }
-
-  void _showOkSnack(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
-  }
-
-  void _showErrSnack(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg),
-        backgroundColor: Theme.of(context).colorScheme.error,
-      ),
-    );
   }
 
   @override
@@ -336,6 +396,12 @@ class _AdminDepartmentDetailsPageState
     return V2ShellScaffold(
       title: title,
       actions: [
+        if (_isAdmin(auth))
+          IconButton(
+            onPressed: _addRoomsCountOnly,
+            icon: const Icon(Icons.add_rounded),
+            tooltip: 'إضافة غرف',
+          ),
         IconButton(
           onPressed: _loadAll,
           icon: const Icon(Icons.refresh_rounded),
@@ -348,15 +414,10 @@ class _AdminDepartmentDetailsPageState
           padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
           children: [
             _headerCard(context),
-
             const SizedBox(height: 12),
-
-            // Staff section (enabled actions)
             _staffCard(context, auth),
-
             const SizedBox(height: 14),
 
-            // Rooms search + filter (unchanged logic)
             TextField(
               controller: _q,
               textInputAction: TextInputAction.search,
@@ -410,7 +471,6 @@ class _AdminDepartmentDetailsPageState
   Widget _headerCard(BuildContext context) {
     final theme = Theme.of(context);
     final code = (widget.departmentCode ?? '').trim();
-
     final subtitle = code.isEmpty
         ? 'استعرض الكادر والغرف.'
         : '($code) استعرض الكادر والغرف.';
@@ -495,7 +555,6 @@ class _AdminDepartmentDetailsPageState
             ],
           ),
           const SizedBox(height: 10),
-
           if (_staffLoading)
             const Padding(
               padding: EdgeInsets.only(top: 10, bottom: 4),
@@ -596,9 +655,7 @@ class _AdminDepartmentDetailsPageState
 
     final subtitle = parts.join(' • ');
 
-    // ✅ Doctor cannot move/remove himself (even if manage nurses is true)
     final isSelf = _isSelf(auth, staff);
-
     final allowActions = canManage && !isSelf;
 
     return Card(
@@ -643,7 +700,6 @@ class _AdminDepartmentDetailsPageState
     );
   }
 
-  // ✅ Rooms (unchanged logic)
   Widget _roomTile(Map<String, dynamic> r) {
     final id = (r['id'] ?? '').toString();
     final code = (r['code'] ?? '').toString();
@@ -652,12 +708,6 @@ class _AdminDepartmentDetailsPageState
     final isActive = (r['is_active'] ?? r['isActive'] ?? true) == true;
 
     final floorText = (floor == null) ? '' : ' • طابق: ${floor.toString()}';
-    final title = name.isEmpty ? (code.isEmpty ? 'غرفة' : code) : name;
-
-    final subtitle = [
-      if (code.isNotEmpty) code,
-      if (floorText.trim().isNotEmpty) floorText.trim(),
-    ].join('');
 
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
@@ -678,8 +728,15 @@ class _AdminDepartmentDetailsPageState
             color: Theme.of(context).colorScheme.primary,
           ),
         ),
-        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w900)),
-        subtitle: Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis),
+        title: Text(
+          name.isEmpty ? (code.isEmpty ? 'غرفة' : code) : name,
+          style: const TextStyle(fontWeight: FontWeight.w900),
+        ),
+        subtitle: Text(
+          '${code.isEmpty ? '' : code}$floorText',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -770,6 +827,30 @@ class _AdminDepartmentDetailsPageState
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  void _showBusySnack(String msg) {
+    if (!_alive) return;
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      SnackBar(content: Text(msg), duration: const Duration(milliseconds: 900)),
+    );
+  }
+
+  void _showOkSnack(String msg) {
+    if (!_alive) return;
+    ScaffoldMessenger.maybeOf(
+      context,
+    )?.showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  void _showErrSnack(String msg) {
+    if (!_alive) return;
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: Theme.of(context).colorScheme.error,
       ),
     );
   }

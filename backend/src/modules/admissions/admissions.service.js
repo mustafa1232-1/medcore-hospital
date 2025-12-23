@@ -1,3 +1,4 @@
+// src/modules/admissions/admissions.service.js
 const pool = require('../../db/pool');
 const { HttpError } = require('../../utils/httpError');
 
@@ -66,9 +67,18 @@ async function listAdmissions({ tenantId, query }) {
   const params = [tenantId];
   let i = 2;
 
-  if (status) { params.push(status); where.push(`a.status = $${i++}`); }
-  if (patientId) { params.push(patientId); where.push(`a.patient_id = $${i++}`); }
-  if (doctorId) { params.push(doctorId); where.push(`a.assigned_doctor_user_id = $${i++}`); }
+  if (status) {
+    params.push(status);
+    where.push(`a.status = $${i++}`);
+  }
+  if (patientId) {
+    params.push(patientId);
+    where.push(`a.patient_id = $${i++}`);
+  }
+  if (doctorId) {
+    params.push(doctorId);
+    where.push(`a.assigned_doctor_user_id = $${i++}`);
+  }
 
   const countQ = await pool.query(
     `SELECT COUNT(*)::int AS count FROM admissions a WHERE ${where.join(' AND ')}`,
@@ -115,10 +125,10 @@ async function listAdmissions({ tenantId, query }) {
 }
 
 async function createAdmission({ tenantId, createdByUserId, patientId, assignedDoctorUserId, reason, notes }) {
-  const p = await pool.query(
-    `SELECT id FROM patients WHERE tenant_id = $1 AND id = $2`,
-    [tenantId, patientId]
-  );
+  const p = await pool.query(`SELECT id FROM patients WHERE tenant_id = $1 AND id = $2`, [
+    tenantId,
+    patientId,
+  ]);
   if (!p.rows[0]) throw new HttpError(400, 'Invalid patientId');
 
   const { rows } = await pool.query(
@@ -160,9 +170,18 @@ async function updateAdmission({ tenantId, id, patch }) {
   const values = [tenantId, id];
   let i = 2;
 
-  if (patch.assignedDoctorUserId !== undefined) { values.push(patch.assignedDoctorUserId); set.push(`assigned_doctor_user_id = $${++i}`); }
-  if (patch.reason !== undefined) { values.push(patch.reason); set.push(`reason = $${++i}`); }
-  if (patch.notes !== undefined) { values.push(patch.notes); set.push(`notes = $${++i}`); }
+  if (patch.assignedDoctorUserId !== undefined) {
+    values.push(patch.assignedDoctorUserId);
+    set.push(`assigned_doctor_user_id = $${++i}`);
+  }
+  if (patch.reason !== undefined) {
+    values.push(patch.reason);
+    set.push(`reason = $${++i}`);
+  }
+  if (patch.notes !== undefined) {
+    values.push(patch.notes);
+    set.push(`notes = $${++i}`);
+  }
 
   if (set.length === 0) return getAdmissionOr404({ tenantId, id });
 
@@ -196,18 +215,126 @@ async function getAdmissionDetails({ tenantId, id }) {
   return { ...admission, activeBed };
 }
 
+/** ===========================
+ *  NEW: Bed History + Patient Log helpers (TX)
+ *  =========================== */
+async function insertPatientLogTx(
+  client,
+  { tenantId, patientId, admissionId, actorUserId, eventType, message, meta }
+) {
+  await client.query(
+    `
+    INSERT INTO patient_log (
+      tenant_id, patient_id, admission_id, actor_user_id,
+      event_type, message, meta, created_at
+    )
+    VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb, now())
+    `,
+    [
+      tenantId,
+      patientId,
+      admissionId || null,
+      actorUserId || null,
+      eventType,
+      message || null,
+      JSON.stringify(meta || {}),
+    ]
+  );
+}
+
+async function openBedHistoryTx(
+  client,
+  { tenantId, bedId, admissionId, actorUserId, reason, notes }
+) {
+  // bed -> room -> department
+  const infoQ = await client.query(
+    `
+    SELECT b.id AS "bedId", b.room_id AS "roomId", r.department_id AS "departmentId"
+    FROM beds b
+    JOIN rooms r ON r.id = b.room_id
+    WHERE b.tenant_id = $1 AND b.id = $2
+    `,
+    [tenantId, bedId]
+  );
+  const info = infoQ.rows[0];
+  if (!info) throw new HttpError(400, 'Invalid bedId');
+
+  // admission -> patient
+  const admQ = await client.query(
+    `SELECT patient_id AS "patientId" FROM admissions WHERE tenant_id = $1 AND id = $2`,
+    [tenantId, admissionId]
+  );
+  const adm = admQ.rows[0];
+  if (!adm) throw new HttpError(404, 'Admission not found');
+
+  await client.query(
+    `
+    INSERT INTO bed_history (
+      tenant_id, bed_id, room_id, department_id,
+      admission_id, patient_id,
+      assigned_at, released_at,
+      reason, actor_user_id, notes, created_at
+    )
+    VALUES ($1,$2,$3,$4,$5,$6, now(), NULL, $7, $8, $9, now())
+    `,
+    [
+      tenantId,
+      info.bedId,
+      info.roomId,
+      info.departmentId || null,
+      admissionId,
+      adm.patientId,
+      reason || 'ADMISSION',
+      actorUserId || null,
+      notes || null,
+    ]
+  );
+
+  return { patientId: adm.patientId, roomId: info.roomId, departmentId: info.departmentId || null };
+}
+
+async function closeBedHistoryByAdmissionTx(
+  client,
+  { tenantId, admissionId, bedId, actorUserId, reason, notes }
+) {
+  const upd = await client.query(
+    `
+    UPDATE bed_history
+    SET released_at = now(),
+        actor_user_id = COALESCE($4, actor_user_id),
+        reason = COALESCE($5, reason),
+        notes = COALESCE($6, notes)
+    WHERE tenant_id = $1
+      AND admission_id = $2
+      AND bed_id = $3
+      AND released_at IS NULL
+    RETURNING id
+    `,
+    [tenantId, admissionId, bedId, actorUserId || null, reason || null, notes || null]
+  );
+
+  // لا نفشل لو ماكو سجل مفتوح (حماية من بيانات قديمة)
+  return upd.rowCount > 0;
+}
+
+/** ===========================
+ *  Assign / Release / Discharge with history & log
+ *  =========================== */
+
 async function assignBedToAdmission({ tenantId, admissionId, bedId, assignedByUserId }) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
 
     const admissionQ = await client.query(
-      `SELECT id, status FROM admissions WHERE tenant_id = $1 AND id = $2 FOR UPDATE`,
+      `SELECT id, status, patient_id AS "patientId" FROM admissions WHERE tenant_id = $1 AND id = $2 FOR UPDATE`,
       [tenantId, admissionId]
     );
     if (!admissionQ.rows[0]) throw new HttpError(404, 'Admission not found');
 
     const st = admissionQ.rows[0].status;
+    const patientId = admissionQ.rows[0].patientId;
+
     if (st === 'DISCHARGED' || st === 'CANCELLED') {
       throw new HttpError(409, `Cannot assign bed to admission in status ${st}`);
     }
@@ -254,6 +381,26 @@ async function assignBedToAdmission({ tenantId, admissionId, bedId, assignedByUs
       [tenantId, bedId]
     );
 
+    // ✅ NEW: Bed History + Patient Log
+    await openBedHistoryTx(client, {
+      tenantId,
+      bedId,
+      admissionId,
+      actorUserId: assignedByUserId,
+      reason: 'ADMISSION',
+      notes: null,
+    });
+
+    await insertPatientLogTx(client, {
+      tenantId,
+      patientId,
+      admissionId,
+      actorUserId: assignedByUserId,
+      eventType: 'BED_ASSIGNED',
+      message: 'تم تعيين سرير للمريض',
+      meta: { bedId, admissionId },
+    });
+
     if (st === 'PENDING') {
       await client.query(
         `UPDATE admissions SET status = 'ACTIVE', started_at = COALESCE(started_at, now()) WHERE tenant_id = $1 AND id = $2`,
@@ -284,10 +431,11 @@ async function releaseBedFromAdmission({ tenantId, admissionId }) {
     await client.query('BEGIN');
 
     const admissionQ = await client.query(
-      `SELECT id FROM admissions WHERE tenant_id = $1 AND id = $2 FOR UPDATE`,
+      `SELECT id, patient_id AS "patientId" FROM admissions WHERE tenant_id = $1 AND id = $2 FOR UPDATE`,
       [tenantId, admissionId]
     );
     if (!admissionQ.rows[0]) throw new HttpError(404, 'Admission not found');
+    const patientId = admissionQ.rows[0].patientId;
 
     const abQ = await client.query(
       `
@@ -313,6 +461,26 @@ async function releaseBedFromAdmission({ tenantId, admissionId }) {
       [tenantId, ab.bed_id]
     );
 
+    // ✅ NEW: Close Bed History + Log
+    await closeBedHistoryByAdmissionTx(client, {
+      tenantId,
+      admissionId,
+      bedId: ab.bed_id,
+      actorUserId: null,
+      reason: 'MANUAL',
+      notes: null,
+    });
+
+    await insertPatientLogTx(client, {
+      tenantId,
+      patientId,
+      admissionId,
+      actorUserId: null,
+      eventType: 'BED_RELEASED',
+      message: 'تم تحرير السرير',
+      meta: { bedId: ab.bed_id, admissionId },
+    });
+
     await client.query('COMMIT');
     return { ok: true };
   } catch (e) {
@@ -329,7 +497,7 @@ async function dischargeAdmission({ tenantId, admissionId, notes }) {
     await client.query('BEGIN');
 
     const aQ = await client.query(
-      `SELECT id, status FROM admissions WHERE tenant_id = $1 AND id = $2 FOR UPDATE`,
+      `SELECT id, status, patient_id AS "patientId" FROM admissions WHERE tenant_id = $1 AND id = $2 FOR UPDATE`,
       [tenantId, admissionId]
     );
     const a = aQ.rows[0];
@@ -337,6 +505,7 @@ async function dischargeAdmission({ tenantId, admissionId, notes }) {
     if (['DISCHARGED', 'CANCELLED'].includes(a.status)) {
       throw new HttpError(409, `Admission already closed: ${a.status}`);
     }
+    const patientId = a.patientId;
 
     // حرر السرير إن كان موجود
     const abQ = await client.query(
@@ -344,8 +513,10 @@ async function dischargeAdmission({ tenantId, admissionId, notes }) {
       [tenantId, admissionId]
     );
 
+    let bedId = null;
+
     if (abQ.rows[0]) {
-      const bedId = abQ.rows[0].bed_id;
+      bedId = abQ.rows[0].bed_id;
 
       await client.query(
         `UPDATE admission_beds SET is_active = false, released_at = now() WHERE tenant_id = $1 AND id = $2`,
@@ -356,6 +527,16 @@ async function dischargeAdmission({ tenantId, admissionId, notes }) {
         `UPDATE beds SET status = 'CLEANING'::bed_status WHERE tenant_id = $1 AND id = $2`,
         [tenantId, bedId]
       );
+
+      // ✅ NEW: Close history on discharge
+      await closeBedHistoryByAdmissionTx(client, {
+        tenantId,
+        admissionId,
+        bedId,
+        actorUserId: null,
+        reason: 'DISCHARGE',
+        notes: notes || null,
+      });
     }
 
     await client.query(
@@ -368,6 +549,17 @@ async function dischargeAdmission({ tenantId, admissionId, notes }) {
       `,
       [tenantId, admissionId, notes || null]
     );
+
+    // ✅ NEW: Patient log discharge event
+    await insertPatientLogTx(client, {
+      tenantId,
+      patientId,
+      admissionId,
+      actorUserId: null,
+      eventType: 'DISCHARGED',
+      message: 'تم تخريج المريض',
+      meta: { admissionId, bedId },
+    });
 
     await client.query('COMMIT');
     return await getAdmissionDetails({ tenantId, id: admissionId });
