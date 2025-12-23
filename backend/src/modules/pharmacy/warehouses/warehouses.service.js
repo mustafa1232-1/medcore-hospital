@@ -15,24 +15,30 @@ function clampInt(n, { min, max, fallback }) {
 
 async function ensureUserIsPharmacy({ tenantId, userId }) {
   // ✅ verify that the assigned user belongs to same tenant and has PHARMACY role
+  // ✅ roles are checked from users.roles (TEXT[]), not from user_roles.role
   const { rows } = await pool.query(
     `
     SELECT
       u.id,
       u.tenant_id AS "tenantId",
       u.is_active AS "isActive",
-      COALESCE(ur.role, '') AS "role"
+      u.roles AS roles
     FROM users u
-    LEFT JOIN user_roles ur ON ur.user_id = u.id
     WHERE u.tenant_id = $1 AND u.id = $2
+    LIMIT 1
     `,
     [tenantId, userId]
   );
 
   if (!rows.length) throw new HttpError(404, 'Pharmacist user not found');
 
-  const roles = rows.map((r) => String(r.role || '').toUpperCase()).filter(Boolean);
   const isActive = !!rows[0].isActive;
+
+  // roles might come as array or null
+  const rolesArr = Array.isArray(rows[0].roles) ? rows[0].roles : [];
+  const roles = rolesArr
+    .map((r) => String(r || '').toUpperCase())
+    .filter(Boolean);
 
   if (!isActive) throw new HttpError(400, 'Assigned pharmacist is not active');
   if (!roles.includes('PHARMACY')) {
@@ -157,18 +163,11 @@ async function createWarehouse({ tenantId, data }) {
       `
       INSERT INTO warehouses (tenant_id, name, code, is_active, pharmacist_user_id, created_at)
       VALUES ($1,$2,$3,$4,$5, now())
-      RETURNING
-        id,
-        name,
-        code,
-        is_active AS "isActive",
-        pharmacist_user_id AS "pharmacistUserId",
-        created_at AS "createdAt"
+      RETURNING id
       `,
       [tenantId, name, code, isActive, pharmacistUserId]
     );
 
-    // enrich pharmacist info
     return getWarehouse({ tenantId, id: rows[0].id });
   } catch (e) {
     if (e && e.code === '23505') {
