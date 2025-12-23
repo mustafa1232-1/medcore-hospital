@@ -17,15 +17,12 @@ const router = express.Router();
 /**
  * Policy:
  * - VIEW: PHARMACY + ADMIN
- * - WRITE: ADMIN فقط
+ * - WRITE: ADMIN only
  */
 
-router.get(
-  '/',
-  requireAuth,
-  requireRole('PHARMACY', 'ADMIN'),
-  async (req, _res, next) => {
-    const { error, value } = listWarehousesQuerySchema.validate(req.query, {
+function validateQuery(schema) {
+  return (req, _res, next) => {
+    const { error, value } = schema.validate(req.query, {
       abortEarly: false,
       stripUnknown: true,
     });
@@ -42,7 +39,14 @@ router.get(
 
     req.query = value;
     return next();
-  },
+  };
+}
+
+router.get(
+  '/',
+  requireAuth,
+  requireRole('PHARMACY', 'ADMIN'),
+  validateQuery(listWarehousesQuerySchema),
   ctrl.list
 );
 
