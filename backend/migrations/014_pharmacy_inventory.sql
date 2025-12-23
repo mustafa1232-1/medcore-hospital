@@ -46,14 +46,13 @@ CREATE TABLE IF NOT EXISTS warehouses (
 CREATE INDEX IF NOT EXISTS idx_warehouses_tenant ON warehouses(tenant_id);
 
 -- =========================
--- Drug Catalog (default 1000 items can be seeded)
+-- Drug Catalog
 -- tenant-scoped so each facility can customize names/forms etc.
 -- =========================
 CREATE TABLE IF NOT EXISTS drug_catalog (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE RESTRICT,
 
-  -- Display identity
   generic_name TEXT NOT NULL,              -- Paracetamol
   brand_name TEXT,                         -- Panadol (optional)
   strength TEXT,                           -- 500mg, 1g/100ml
@@ -65,18 +64,26 @@ CREATE TABLE IF NOT EXISTS drug_catalog (
   atc_code TEXT,                           -- optional
 
   is_active BOOLEAN NOT NULL DEFAULT true,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-
-  -- avoid duplicates by common keys
-  UNIQUE (tenant_id, generic_name, strength, form, COALESCE(route,''), COALESCE(unit,''))
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_drug_catalog_tenant ON drug_catalog(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_drug_catalog_name ON drug_catalog(tenant_id, generic_name);
 
+-- ✅ Expression-based uniqueness (Postgres يسمح بها كـ UNIQUE INDEX فقط)
+CREATE UNIQUE INDEX IF NOT EXISTS uq_drug_catalog_key
+  ON drug_catalog (
+    tenant_id,
+    generic_name,
+    strength,
+    form,
+    COALESCE(route,''),
+    COALESCE(unit,'')
+  );
+
 -- =========================
 -- Stock lots (batch/expiry) per warehouse+drug
--- We do LOT-level tracking for realism.
+-- LOT-level tracking
 -- =========================
 CREATE TABLE IF NOT EXISTS stock_lots (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -88,12 +95,21 @@ CREATE TABLE IF NOT EXISTS stock_lots (
   lot_number TEXT,               -- batch
   expiry_date DATE,
   unit_cost NUMERIC(18,4),       -- optional
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-
-  UNIQUE (tenant_id, warehouse_id, drug_id, COALESCE(lot_number,''), COALESCE(expiry_date::text,''))
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_stock_lots_tenant_wh_drug ON stock_lots(tenant_id, warehouse_id, drug_id);
+CREATE INDEX IF NOT EXISTS idx_stock_lots_tenant_wh_drug
+  ON stock_lots(tenant_id, warehouse_id, drug_id);
+
+-- ✅ Expression-based uniqueness for lot identity
+CREATE UNIQUE INDEX IF NOT EXISTS uq_stock_lots_key
+  ON stock_lots (
+    tenant_id,
+    warehouse_id,
+    drug_id,
+    COALESCE(lot_number,''),
+    COALESCE(expiry_date::text,'')
+  );
 
 -- =========================
 -- Inventory Ledger (immutable)
@@ -104,17 +120,16 @@ CREATE TABLE IF NOT EXISTS stock_moves (
   tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE RESTRICT,
 
   move_type stock_move_type NOT NULL,
-  status request_status NOT NULL DEFAULT 'APPROVED', -- moves should be created only after approval (or use DRAFT with caution)
+  status request_status NOT NULL DEFAULT 'APPROVED',
 
   warehouse_id UUID NOT NULL REFERENCES warehouses(id) ON DELETE RESTRICT,
   lot_id UUID REFERENCES stock_lots(id) ON DELETE RESTRICT,
   drug_id UUID NOT NULL REFERENCES drug_catalog(id) ON DELETE RESTRICT,
 
   qty NUMERIC(18,3) NOT NULL CHECK (qty > 0),
-  direction INT NOT NULL CHECK (direction IN (1,-1)), -- +1 IN, -1 OUT
+  direction INT NOT NULL CHECK (direction IN (1,-1)),
 
-  -- references for traceability
-  reference_type TEXT, -- 'ORDER','ADMISSION','REQUEST','TRANSFER'...
+  reference_type TEXT,
   reference_id UUID,
 
   patient_id UUID REFERENCES patients(id) ON DELETE SET NULL,
@@ -135,14 +150,13 @@ CREATE INDEX IF NOT EXISTS idx_stock_moves_tenant_wh ON stock_moves(tenant_id, w
 CREATE INDEX IF NOT EXISTS idx_stock_moves_order ON stock_moves(order_id);
 
 -- =========================
--- Stock Requests (workflow: pharmacist submits, admin approves)
--- Request lines create moves when approved.
+-- Stock Requests (workflow)
 -- =========================
 CREATE TABLE IF NOT EXISTS stock_requests (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE RESTRICT,
 
-  kind stock_move_type NOT NULL,  -- RECEIPT / DISPENSE / TRANSFER_OUT / ADJUSTMENT...
+  kind stock_move_type NOT NULL,
   status request_status NOT NULL DEFAULT 'DRAFT',
 
   from_warehouse_id UUID REFERENCES warehouses(id) ON DELETE RESTRICT,
@@ -170,7 +184,6 @@ CREATE TABLE IF NOT EXISTS stock_request_lines (
   request_id UUID NOT NULL REFERENCES stock_requests(id) ON DELETE CASCADE,
   drug_id UUID NOT NULL REFERENCES drug_catalog(id) ON DELETE RESTRICT,
 
-  -- optionally specify lot/expiry for RECEIPT and precise issue
   lot_number TEXT,
   expiry_date DATE,
   unit_cost NUMERIC(18,4),
