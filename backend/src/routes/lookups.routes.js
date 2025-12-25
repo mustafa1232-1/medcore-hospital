@@ -70,8 +70,8 @@ router.get('/patients', requireAuth, async (req, res, next) => {
 });
 
 /**
- * ✅ Staff lookup
- * GET /api/lookups/staff?role=NURSE&q=&limit=
+ * ✅ Staff lookup (NOW supports departmentId + allows RECEPTION)
+ * GET /api/lookups/staff?role=DOCTOR&departmentId=<uuid>&q=&limit=
  */
 router.get('/staff', requireAuth, async (req, res, next) => {
   try {
@@ -81,32 +81,63 @@ router.get('/staff', requireAuth, async (req, res, next) => {
     const role = normalizeRole(req.query.role);
     if (!role) return next(new HttpError(400, 'role is required'));
 
+    const departmentId = str(req.query.departmentId) || null; // ✅ NEW
     const q = str(req.query.q);
     const limit = Math.min(toInt(req.query.limit, 20), 50);
 
-    // ✅ السماح: DOCTOR و ADMIN فقط
+    // ✅ السماح: ADMIN / DOCTOR / RECEPTION
+    // الاستقبال يحتاج يشوف أطباء الأقسام حتى يعيّن طبيب للمريض
     const rolesRaw = Array.isArray(req.user?.roles) ? req.user.roles : [];
     const roles = rolesRaw
       .map(r => (typeof r === 'string' ? r : r?.name))
       .filter(Boolean)
       .map(x => String(x).toUpperCase().trim());
 
-    const canLookupStaff = roles.includes('DOCTOR') || roles.includes('ADMIN');
+    const canLookupStaff =
+      roles.includes('ADMIN') || roles.includes('DOCTOR') || roles.includes('RECEPTION');
+
     if (!canLookupStaff) return next(new HttpError(403, 'Forbidden'));
 
-    const params = [tenantId, role, limit];
-    let qFilter = '';
+    const params = [tenantId, role];
+    let idx = params.length; // last used index
+
+    let where = `
+      u.tenant_id = $1
+      AND u.is_active = true
+      AND EXISTS (
+        SELECT 1
+        FROM user_roles ur
+        JOIN roles r ON r.id = ur.role_id
+        WHERE ur.user_id = u.id
+          AND UPPER(r.name) = $2
+          AND r.tenant_id = u.tenant_id
+      )
+    `;
+
+    // ✅ filter by department
+    if (departmentId) {
+      params.push(departmentId);
+      idx = params.length;
+      where += ` AND u.department_id = $${idx}`;
+    }
+
+    // ✅ search filter
     if (q) {
       params.push(`%${q}%`);
-      qFilter = `
+      idx = params.length;
+      const p = `$${idx}`;
+      where += `
         AND (
-          u.full_name ILIKE $4
-          OR COALESCE(u.staff_code,'') ILIKE $4
-          OR COALESCE(u.email,'') ILIKE $4
-          OR COALESCE(u.phone,'') ILIKE $4
+          u.full_name ILIKE ${p}
+          OR COALESCE(u.staff_code,'') ILIKE ${p}
+          OR COALESCE(u.email,'') ILIKE ${p}
+          OR COALESCE(u.phone,'') ILIKE ${p}
         )
       `;
     }
+
+    params.push(limit);
+    const limitP = `$${params.length}`;
 
     const sql = `
       SELECT
@@ -114,21 +145,12 @@ router.get('/staff', requireAuth, async (req, res, next) => {
         u.full_name AS "fullName",
         u.staff_code AS "staffCode",
         u.email,
-        u.phone
+        u.phone,
+        u.department_id AS "departmentId"
       FROM users u
-      WHERE
-        u.tenant_id = $1
-        AND u.is_active = true
-        AND EXISTS (
-          SELECT 1
-          FROM user_roles ur
-          JOIN roles r ON r.id = ur.role_id
-          WHERE ur.user_id = u.id
-            AND UPPER(r.name) = $2
-        )
-        ${qFilter}
+      WHERE ${where}
       ORDER BY u.full_name ASC
-      LIMIT $3
+      LIMIT ${limitP}
     `;
 
     const r = await pool.query(sql, params);
@@ -141,6 +163,7 @@ router.get('/staff', requireAuth, async (req, res, next) => {
       staffCode: x.staffCode,
       email: x.email,
       phone: x.phone,
+      departmentId: x.departmentId,
     }));
 
     return res.json({ ok: true, items });
@@ -184,7 +207,6 @@ router.get('/departments', requireAuth, async (req, res, next) => {
       params
     );
 
-    // ✅ unify with other lookups shape: id + label
     const items = rows.map(d => ({
       id: d.id,
       code: d.code,
@@ -197,8 +219,8 @@ router.get('/departments', requireAuth, async (req, res, next) => {
     return next(e);
   }
 });
-const systemDepartmentsRoutes = require('./lookups.system.routes');
 
+const systemDepartmentsRoutes = require('./lookups.system.routes');
 router.use(systemDepartmentsRoutes);
 
 module.exports = router;

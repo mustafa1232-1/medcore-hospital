@@ -41,7 +41,6 @@ class V2Shell extends StatelessWidget {
     if (isDoctor) return const DoctorHomePage();
     if (isNurse) return const NurseHomePageV2();
 
-    // fallback
     return const Scaffold(
       body: Center(child: Text('لا يوجد دور صالح لهذا المستخدم')),
     );
