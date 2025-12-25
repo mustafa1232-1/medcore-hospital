@@ -9,6 +9,9 @@ const { validateBody } = require('../../middlewares/validate');
 const patientsController = require('./patients.controller');
 const { createPatientSchema, updatePatientSchema } = require('./patients.validators');
 
+// ✅ NEW: Join code + external history (cross-facility)
+const patientLinkController = require('./patient_link.controller');
+
 /**
  * Roles:
  * - RECEPTION: create + update + list + view + medical record
@@ -64,6 +67,29 @@ router.get(
   requireAuth,
   requireRole('RECEPTION', 'ADMIN', 'DOCTOR'),
   patientsController.getPatientHealthAdvice
+);
+
+/**
+ * ✅ NEW: Patient linking (QR/Join Code) + cross-facility history
+ *
+ * - join-code: Reception/Admin يولدون كود انضمام للمريض داخل نفس الـ tenant
+ * - external-history: Reception/Admin/Doctor يشوفون المنشآت الأخرى المرتبطة بحساب المريض (إن كان مرتبط)
+ */
+
+// Generate join code for a patient (Reception/Admin only)
+router.post(
+  '/:id/join-code',
+  requireAuth,
+  requireRole('RECEPTION', 'ADMIN'),
+  patientLinkController.issueJoinCode
+);
+
+// View external history across facilities (Reception/Admin/Doctor)
+router.get(
+  '/:id/external-history',
+  requireAuth,
+  requireRole('RECEPTION', 'ADMIN', 'DOCTOR'),
+  patientLinkController.externalHistory
 );
 
 module.exports = router;

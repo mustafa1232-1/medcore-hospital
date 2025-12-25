@@ -75,6 +75,7 @@ const patientLogRoutes = require('./modules/patient_log/patient_log.routes');
 const labResultsRoutes = require('./modules/lab_results/lab_results.routes');
 const pharmacyRoutes = require('./modules/pharmacy/pharmacy.routes');
 const medAdminRoutes = require('./modules/med_admin/med_admin.routes');
+const patientJoinRoutes = require('./modules/patient_app/patient_join.routes');
 
 // Mount routes
 app.use('/api/auth', authRoutes);
@@ -94,6 +95,7 @@ app.use('/api', patientLogRoutes); // keep as-is (module decides paths)
 app.use('/api/lab-results', labResultsRoutes);
 app.use('/api/med-admin', medAdminRoutes);
 app.use('/api/pharmacy', pharmacyRoutes);
+app.use('/api/patient', patientJoinRoutes);
 
 // ==========================
 // 404
