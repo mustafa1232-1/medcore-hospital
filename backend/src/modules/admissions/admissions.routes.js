@@ -6,6 +6,7 @@ const { validateBody } = require('../../middlewares/validate');
 const ctrl = require('./admissions.controller');
 const {
   createAdmissionSchema,
+  createOutpatientSchema, // ✅ new
   updateAdmissionSchema,
   assignBedSchema,
   closeAdmissionSchema,
@@ -13,10 +14,10 @@ const {
 
 const router = express.Router();
 
-// LIST: خليه للأدمن فقط كبداية (آمن مع requireRole الحالي)
+// LIST: Admin only
 router.get('/', requireAuth, requireRole('ADMIN'), ctrl.list);
 
-// CREATE: Reception ينشئ Admission PENDING
+// CREATE: Reception creates PENDING
 router.post(
   '/',
   requireAuth,
@@ -25,10 +26,27 @@ router.post(
   ctrl.create
 );
 
-// VIEW: Admin (يمكن نوسعها لاحقًا لو عدلنا requireRole إلى requireAnyRole)
+// ✅ NEW: DOCTOR creates outpatient visit (ACTIVE, no bed)
+router.post(
+  '/outpatient',
+  requireAuth,
+  requireRole('DOCTOR'),
+  validateBody(createOutpatientSchema),
+  ctrl.createOutpatient
+);
+
+// ✅ NEW: DOCTOR gets active admission for patient
+router.get(
+  '/active',
+  requireAuth,
+  requireRole('DOCTOR'),
+  ctrl.getActiveForPatient
+);
+
+// VIEW: Admin
 router.get('/:id', requireAuth, requireRole('ADMIN'), ctrl.getOne);
 
-// UPDATE: Admin/Doctor لاحقًا. الآن Admin فقط (آمن)
+// UPDATE: Admin
 router.patch(
   '/:id',
   requireAuth,
@@ -37,7 +55,7 @@ router.patch(
   ctrl.update
 );
 
-// Assign bed: Admin (أو Doctor لاحقًا)
+// Assign bed: Admin
 router.post(
   '/:id/assign-bed',
   requireAuth,

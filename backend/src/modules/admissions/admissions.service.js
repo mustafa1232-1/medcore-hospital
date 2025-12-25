@@ -124,7 +124,14 @@ async function listAdmissions({ tenantId, query }) {
   return { items: rows, meta: { total, limit, offset } };
 }
 
-async function createAdmission({ tenantId, createdByUserId, patientId, assignedDoctorUserId, reason, notes }) {
+async function createAdmission({
+  tenantId,
+  createdByUserId,
+  patientId,
+  assignedDoctorUserId,
+  reason,
+  notes,
+}) {
   const p = await pool.query(`SELECT id FROM patients WHERE tenant_id = $1 AND id = $2`, [
     tenantId,
     patientId,
@@ -157,10 +164,116 @@ async function createAdmission({ tenantId, createdByUserId, patientId, assignedD
       ended_at AS "endedAt",
       created_at AS "createdAt"
     `,
-    [tenantId, patientId, createdByUserId, assignedDoctorUserId || null, reason || null, notes || null]
+    [
+      tenantId,
+      patientId,
+      createdByUserId,
+      assignedDoctorUserId || null,
+      reason || null,
+      notes || null,
+    ]
   );
 
   return rows[0];
+}
+
+/**
+ * ✅ NEW: Outpatient visit (no bed) for DOCTOR
+ * - Creates ACTIVE admission immediately
+ * - reason fixed: OUTPATIENT
+ * - assignedDoctorUserId = createdByUserId
+ * - prevents duplicate ACTIVE admission for same patient (returns existing)
+ */
+async function createOutpatientVisit({ tenantId, createdByUserId, patientId, notes }) {
+  const p = await pool.query(`SELECT id FROM patients WHERE tenant_id = $1 AND id = $2`, [
+    tenantId,
+    patientId,
+  ]);
+  if (!p.rows[0]) throw new HttpError(400, 'Invalid patientId');
+
+  const exists = await pool.query(
+    `
+    SELECT id
+    FROM admissions
+    WHERE tenant_id = $1 AND patient_id = $2 AND status = 'ACTIVE'
+    ORDER BY created_at DESC
+    LIMIT 1
+    `,
+    [tenantId, patientId]
+  );
+  if (exists.rows[0]) {
+    // return details for consistency
+    return await getAdmissionDetails({ tenantId, id: exists.rows[0].id });
+  }
+
+  const { rows } = await pool.query(
+    `
+    INSERT INTO admissions (
+      tenant_id,
+      patient_id,
+      created_by_user_id,
+      assigned_doctor_user_id,
+      status,
+      reason,
+      notes,
+      started_at,
+      created_at
+    )
+    VALUES ($1,$2,$3,$3,'ACTIVE','OUTPATIENT',$4,now(),now())
+    RETURNING
+      id,
+      tenant_id AS "tenantId",
+      patient_id AS "patientId",
+      created_by_user_id AS "createdByUserId",
+      assigned_doctor_user_id AS "assignedDoctorUserId",
+      status,
+      reason,
+      notes,
+      started_at AS "startedAt",
+      ended_at AS "endedAt",
+      created_at AS "createdAt"
+    `,
+    [tenantId, patientId, createdByUserId, notes || null]
+  );
+
+  // optional: log
+  await pool.query(
+    `
+    INSERT INTO patient_log (
+      tenant_id, patient_id, admission_id, actor_user_id,
+      event_type, message, meta, created_at
+    )
+    VALUES ($1,$2,$3,$4,'VISIT_CREATED','تم إنشاء زيارة خارجية (Outpatient)',$5::jsonb, now())
+    `,
+    [
+      tenantId,
+      patientId,
+      rows[0].id,
+      createdByUserId,
+      JSON.stringify({ type: 'OUTPATIENT' }),
+    ]
+  );
+
+  return await getAdmissionDetails({ tenantId, id: rows[0].id });
+}
+
+/**
+ * ✅ NEW: get active admission for patient
+ */
+async function getActiveAdmissionForPatient({ tenantId, patientId }) {
+  const { rows } = await pool.query(
+    `
+    SELECT id
+    FROM admissions
+    WHERE tenant_id = $1
+      AND patient_id = $2
+      AND status = 'ACTIVE'
+    ORDER BY created_at DESC
+    LIMIT 1
+    `,
+    [tenantId, patientId]
+  );
+  return { admissionId: rows[0]?.id || null };
 }
 
 async function updateAdmission({ tenantId, id, patch }) {
@@ -216,12 +329,9 @@ async function getAdmissionDetails({ tenantId, id }) {
 }
 
 /** ===========================
- *  NEW: Bed History + Patient Log helpers (TX)
+ *  Bed History + Patient Log helpers (TX)
  *  =========================== */
-async function insertPatientLogTx(
-  client,
-  { tenantId, patientId, admissionId, actorUserId, eventType, message, meta }
-) {
+async function insertPatientLogTx(client, { tenantId, patientId, admissionId, actorUserId, eventType, message, meta }) {
   await client.query(
     `
     INSERT INTO patient_log (
@@ -242,11 +352,7 @@ async function insertPatientLogTx(
   );
 }
 
-async function openBedHistoryTx(
-  client,
-  { tenantId, bedId, admissionId, actorUserId, reason, notes }
-) {
-  // bed -> room -> department
+async function openBedHistoryTx(client, { tenantId, bedId, admissionId, actorUserId, reason, notes }) {
   const infoQ = await client.query(
     `
     SELECT b.id AS "bedId", b.room_id AS "roomId", r.department_id AS "departmentId"
@@ -259,7 +365,6 @@ async function openBedHistoryTx(
   const info = infoQ.rows[0];
   if (!info) throw new HttpError(400, 'Invalid bedId');
 
-  // admission -> patient
   const admQ = await client.query(
     `SELECT patient_id AS "patientId" FROM admissions WHERE tenant_id = $1 AND id = $2`,
     [tenantId, admissionId]
@@ -293,10 +398,7 @@ async function openBedHistoryTx(
   return { patientId: adm.patientId, roomId: info.roomId, departmentId: info.departmentId || null };
 }
 
-async function closeBedHistoryByAdmissionTx(
-  client,
-  { tenantId, admissionId, bedId, actorUserId, reason, notes }
-) {
+async function closeBedHistoryByAdmissionTx(client, { tenantId, admissionId, bedId, actorUserId, reason, notes }) {
   const upd = await client.query(
     `
     UPDATE bed_history
@@ -312,8 +414,6 @@ async function closeBedHistoryByAdmissionTx(
     `,
     [tenantId, admissionId, bedId, actorUserId || null, reason || null, notes || null]
   );
-
-  // لا نفشل لو ماكو سجل مفتوح (حماية من بيانات قديمة)
   return upd.rowCount > 0;
 }
 
@@ -381,7 +481,6 @@ async function assignBedToAdmission({ tenantId, admissionId, bedId, assignedByUs
       [tenantId, bedId]
     );
 
-    // ✅ NEW: Bed History + Patient Log
     await openBedHistoryTx(client, {
       tenantId,
       bedId,
@@ -455,13 +554,11 @@ async function releaseBedFromAdmission({ tenantId, admissionId }) {
       [tenantId, ab.id]
     );
 
-    // واقعيًا: بعد الخروج يصير CLEANING وليس AVAILABLE مباشرة
     await client.query(
       `UPDATE beds SET status = 'CLEANING'::bed_status WHERE tenant_id = $1 AND id = $2`,
       [tenantId, ab.bed_id]
     );
 
-    // ✅ NEW: Close Bed History + Log
     await closeBedHistoryByAdmissionTx(client, {
       tenantId,
       admissionId,
@@ -507,7 +604,6 @@ async function dischargeAdmission({ tenantId, admissionId, notes }) {
     }
     const patientId = a.patientId;
 
-    // حرر السرير إن كان موجود
     const abQ = await client.query(
       `SELECT id, bed_id FROM admission_beds WHERE tenant_id = $1 AND admission_id = $2 AND is_active = true FOR UPDATE LIMIT 1`,
       [tenantId, admissionId]
@@ -528,7 +624,6 @@ async function dischargeAdmission({ tenantId, admissionId, notes }) {
         [tenantId, bedId]
       );
 
-      // ✅ NEW: Close history on discharge
       await closeBedHistoryByAdmissionTx(client, {
         tenantId,
         admissionId,
@@ -550,7 +645,6 @@ async function dischargeAdmission({ tenantId, admissionId, notes }) {
       [tenantId, admissionId, notes || null]
     );
 
-    // ✅ NEW: Patient log discharge event
     await insertPatientLogTx(client, {
       tenantId,
       patientId,
@@ -613,6 +707,8 @@ async function cancelAdmission({ tenantId, admissionId, notes }) {
 module.exports = {
   listAdmissions,
   createAdmission,
+  createOutpatientVisit,          // ✅ new
+  getActiveAdmissionForPatient,   // ✅ new
   updateAdmission,
   getAdmissionDetails,
   assignBedToAdmission,

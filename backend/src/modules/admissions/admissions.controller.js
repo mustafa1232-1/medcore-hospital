@@ -26,6 +26,33 @@ async function create(req, res, next) {
   } catch (e) { next(e); }
 }
 
+// ✅ NEW: Outpatient visit by doctor (ACTIVE immediately, no bed)
+async function createOutpatient(req, res, next) {
+  try {
+    const admission = await svc.createOutpatientVisit({
+      tenantId: tenantId(req),
+      createdByUserId: userId(req),
+      patientId: req.body.patientId,
+      notes: req.body.notes,
+    });
+    res.status(201).json({ data: admission });
+  } catch (e) { next(e); }
+}
+
+// ✅ NEW: get active admission for patient
+async function getActiveForPatient(req, res, next) {
+  try {
+    const patientId = String(req.query.patientId || '').trim();
+    if (!patientId) throw new HttpError(400, 'patientId required');
+
+    const result = await svc.getActiveAdmissionForPatient({
+      tenantId: tenantId(req),
+      patientId,
+    });
+    res.json({ data: result });
+  } catch (e) { next(e); }
+}
+
 async function getOne(req, res, next) {
   try {
     const admission = await svc.getAdmissionDetails({ tenantId: tenantId(req), id: req.params.id });
@@ -91,6 +118,8 @@ async function cancel(req, res, next) {
 module.exports = {
   list,
   create,
+  createOutpatient,     // ✅ new
+  getActiveForPatient,  // ✅ new
   getOne,
   update,
   assignBed,
