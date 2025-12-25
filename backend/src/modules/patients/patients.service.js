@@ -276,7 +276,7 @@ async function updatePatient(tenantId, patientId, data) {
 }
 
 /** ===========================
- *  NEW: Patient Medical Record (ربط اللوك + التاريخ + الملفات)
+ *  NEW: Patient Medical Record
  *  =========================== */
 
 async function getPatientMedicalRecord({ tenantId, patientId, limit, offset }) {
@@ -324,7 +324,13 @@ async function getPatientMedicalRecord({ tenantId, patientId, limit, offset }) {
     [tenantId, patientId, safeLimit, safeOffset]
   );
 
-  // Bed History (كل سجل أسرة مرّ بها)
+  // ✅ NEW: Current Admission snapshot (for auto-assign flow)
+  // نختار أحدث Admission بحالة PENDING/ACTIVE
+  const currentAdmission =
+    admissionsQ.rows.find((x) => ['ACTIVE', 'PENDING'].includes(String(x.status || '').toUpperCase())) ||
+    null;
+
+  // Bed History
   const bedHistoryQ = await pool.query(
     `
     SELECT
@@ -344,9 +350,12 @@ async function getPatientMedicalRecord({ tenantId, patientId, limit, offset }) {
       r.code AS "roomCode",
       d.code AS "departmentCode"
     FROM bed_history bh
-    LEFT JOIN beds b ON b.id = bh.bed_id
-    LEFT JOIN rooms r ON r.id = bh.room_id
-    LEFT JOIN departments d ON d.id = bh.department_id
+    LEFT JOIN beds b
+      ON b.id = bh.bed_id AND b.tenant_id = bh.tenant_id
+    LEFT JOIN rooms r
+      ON r.id = bh.room_id AND r.tenant_id = bh.tenant_id
+    LEFT JOIN departments d
+      ON d.id = bh.department_id AND d.tenant_id = bh.tenant_id
     WHERE bh.tenant_id = $1 AND bh.patient_id = $2
     ORDER BY bh.assigned_at DESC
     LIMIT 200
@@ -354,7 +363,7 @@ async function getPatientMedicalRecord({ tenantId, patientId, limit, offset }) {
     [tenantId, patientId]
   );
 
-  // Patient Log (اللوك)
+  // Patient Log (✅ FIX: u.full_name بدل u.name + tenant safe join)
   const logsQ = await pool.query(
     `
     SELECT
@@ -366,10 +375,12 @@ async function getPatientMedicalRecord({ tenantId, patientId, limit, offset }) {
       pl.actor_user_id AS "actorUserId",
       pl.created_at AS "createdAt",
 
-      u.name AS "actorName",
+      u.full_name AS "actorName",
       u.staff_code AS "actorStaffCode"
     FROM patient_log pl
-    LEFT JOIN users u ON u.id = pl.actor_user_id AND u.tenant_id = pl.tenant_id
+    LEFT JOIN users u
+      ON u.id = pl.actor_user_id
+     AND u.tenant_id = pl.tenant_id
     WHERE pl.tenant_id = $1 AND pl.patient_id = $2
     ORDER BY pl.created_at DESC
     LIMIT 300
@@ -377,7 +388,7 @@ async function getPatientMedicalRecord({ tenantId, patientId, limit, offset }) {
     [tenantId, patientId]
   );
 
-  // Patient Files (الأرشيف)
+  // Patient Files
   const filesQ = await pool.query(
     `
     SELECT
@@ -401,6 +412,10 @@ async function getPatientMedicalRecord({ tenantId, patientId, limit, offset }) {
   return {
     patient,
     admissions: admissionsQ.rows,
+
+    // ✅ NEW
+    currentAdmission,
+
     bedHistory: bedHistoryQ.rows,
     logs: logsQ.rows,
     files: filesQ.rows,
@@ -415,7 +430,6 @@ async function getPatientMedicalRecord({ tenantId, patientId, limit, offset }) {
 function adviceCatalogByDepartmentCode(departmentCode) {
   const code = String(departmentCode || '').toUpperCase().trim();
 
-  // قواعد بسيطة الآن (نطوّرها لاحقًا لتكون من جدول)
   const base = [
     'اشرب ماء بكميات مناسبة حسب توجيه الطبيب.',
     'التزم بمواعيد الأدوية ولا توقف علاج بدون استشارة.',
@@ -452,10 +466,8 @@ function adviceCatalogByDepartmentCode(departmentCode) {
 async function getPatientHealthAdvice({ tenantId, patientId }) {
   if (!tenantId) throw new HttpError(400, 'Missing tenantId');
 
-  // تأكد المريض موجود
   await getPatientById(tenantId, patientId);
 
-  // نجيب القسم الحالي من active admission bed (إن وجد)
   const q = await pool.query(
     `
     SELECT
@@ -482,7 +494,6 @@ async function getPatientHealthAdvice({ tenantId, patientId }) {
 
   const row = q.rows[0];
 
-  // إذا ليس منوّم الآن
   if (!row) {
     return {
       current: null,
@@ -509,8 +520,6 @@ module.exports = {
   createPatient,
   getPatientById,
   updatePatient,
-
-  // NEW
   getPatientMedicalRecord,
   getPatientHealthAdvice,
 };

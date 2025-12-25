@@ -21,8 +21,13 @@ function normalizeRole(v) {
   return String(v ?? '').toUpperCase().trim();
 }
 
+// UUID check (خفيف)
+function isUuid(v) {
+  const s = String(v || '').trim();
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s);
+}
+
 // ✅ Patients lookup
-// GET /api/lookups/patients?q=&limit=
 router.get('/patients', requireAuth, async (req, res, next) => {
   try {
     const tenantId = req.user?.tenantId;
@@ -70,7 +75,7 @@ router.get('/patients', requireAuth, async (req, res, next) => {
 });
 
 /**
- * ✅ Staff lookup (NOW supports departmentId + allows RECEPTION)
+ * ✅ Staff lookup (supports departmentId + allows RECEPTION)
  * GET /api/lookups/staff?role=DOCTOR&departmentId=<uuid>&q=&limit=
  */
 router.get('/staff', requireAuth, async (req, res, next) => {
@@ -81,12 +86,17 @@ router.get('/staff', requireAuth, async (req, res, next) => {
     const role = normalizeRole(req.query.role);
     if (!role) return next(new HttpError(400, 'role is required'));
 
-    const departmentId = str(req.query.departmentId) || null; // ✅ NEW
+    const departmentIdRaw = str(req.query.departmentId);
+    const departmentId = departmentIdRaw ? departmentIdRaw : null;
+
+    if (departmentId && !isUuid(departmentId)) {
+      return next(new HttpError(400, 'departmentId must be a valid UUID'));
+    }
+
     const q = str(req.query.q);
     const limit = Math.min(toInt(req.query.limit, 20), 50);
 
-    // ✅ السماح: ADMIN / DOCTOR / RECEPTION
-    // الاستقبال يحتاج يشوف أطباء الأقسام حتى يعيّن طبيب للمريض
+    // ✅ allow: ADMIN / DOCTOR / RECEPTION
     const rolesRaw = Array.isArray(req.user?.roles) ? req.user.roles : [];
     const roles = rolesRaw
       .map(r => (typeof r === 'string' ? r : r?.name))
@@ -99,8 +109,6 @@ router.get('/staff', requireAuth, async (req, res, next) => {
     if (!canLookupStaff) return next(new HttpError(403, 'Forbidden'));
 
     const params = [tenantId, role];
-    let idx = params.length; // last used index
-
     let where = `
       u.tenant_id = $1
       AND u.is_active = true
@@ -114,18 +122,14 @@ router.get('/staff', requireAuth, async (req, res, next) => {
       )
     `;
 
-    // ✅ filter by department
     if (departmentId) {
       params.push(departmentId);
-      idx = params.length;
-      where += ` AND u.department_id = $${idx}`;
+      where += ` AND u.department_id = $${params.length}`;
     }
 
-    // ✅ search filter
     if (q) {
       params.push(`%${q}%`);
-      idx = params.length;
-      const p = `$${idx}`;
+      const p = `$${params.length}`;
       where += `
         AND (
           u.full_name ILIKE ${p}
@@ -174,8 +178,6 @@ router.get('/staff', requireAuth, async (req, res, next) => {
 
 /**
  * ✅ Departments lookup
- * GET /api/lookups/departments?q=&limit=
- * - For dropdowns (doctor/nurse department selection)
  */
 router.get('/departments', requireAuth, async (req, res, next) => {
   try {
