@@ -280,15 +280,32 @@ async function createOrderTx({
   }
 }
 
+/** ==========================================
+ * ✅ NEW: listOrders returns patientFullName
+ *    + derived drugName from payload.medicationName
+ *    (to make Flutter display names without extra calls)
+ * ========================================== */
 async function listOrders({ tenantId, query }) {
   const where = ['o.tenant_id = $1'];
   const params = [tenantId];
   let i = 2;
 
-  if (query.admissionId) { params.push(query.admissionId); where.push(`o.admission_id = $${i++}`); }
-  if (query.patientId) { params.push(query.patientId); where.push(`o.patient_id = $${i++}`); }
-  if (query.kind) { params.push(query.kind); where.push(`o.kind = $${i++}::order_kind`); }
-  if (query.status) { params.push(query.status); where.push(`o.status = $${i++}::order_status`); }
+  if (query.admissionId) {
+    params.push(query.admissionId);
+    where.push(`o.admission_id = $${i++}`);
+  }
+  if (query.patientId) {
+    params.push(query.patientId);
+    where.push(`o.patient_id = $${i++}`);
+  }
+  if (query.kind) {
+    params.push(query.kind);
+    where.push(`o.kind = $${i++}::order_kind`);
+  }
+  if (query.status) {
+    params.push(query.status);
+    where.push(`o.status = $${i++}::order_status`);
+  }
 
   const limit = query.limit ?? 20;
   const offset = query.offset ?? 0;
@@ -307,6 +324,7 @@ async function listOrders({ tenantId, query }) {
       o.id,
       o.admission_id AS "admissionId",
       o.patient_id AS "patientId",
+      p.full_name AS "patientFullName",
       o.kind,
       o.status,
       o.payload,
@@ -315,6 +333,9 @@ async function listOrders({ tenantId, query }) {
       o.updated_at AS "updatedAt",
       o.cancelled_at AS "cancelledAt"
     FROM orders o
+    JOIN patients p
+      ON p.tenant_id = o.tenant_id
+     AND p.id = o.patient_id
     WHERE ${where.join(' AND ')}
     ORDER BY o.created_at DESC
     LIMIT $${i++} OFFSET $${i}
@@ -322,9 +343,36 @@ async function listOrders({ tenantId, query }) {
     params
   );
 
-  return { items: rows, meta: { total, limit, offset } };
+  // ✅ enrich response (no schema changes required)
+  const items = rows.map((r) => {
+    const payload = r.payload || {};
+    return {
+      ...r,
+      // for backward/forward UI compatibility
+      patientName: r.patientFullName || null,
+      patientFullName: r.patientFullName || null,
+
+      drugName: payload.medicationName || null,
+      medicationName: payload.medicationName || null,
+
+      requestedQty: payload.requestedQty ?? null,
+      dose: payload.dose ?? null,
+      route: payload.route ?? null,
+      frequency: payload.frequency ?? null,
+      duration: payload.duration ?? null,
+
+      // pharmacy sub-object (if exists)
+      pharmacy: payload.pharmacy ?? null,
+    };
+  });
+
+  return { items, meta: { total, limit, offset } };
 }
 
+/** ==========================================
+ * ✅ NEW: getOrder returns patientFullName
+ *    + derived drugName
+ * ========================================== */
 async function getOrder({ tenantId, id }) {
   const { rows } = await pool.query(
     `
@@ -332,6 +380,7 @@ async function getOrder({ tenantId, id }) {
       o.id,
       o.admission_id AS "admissionId",
       o.patient_id AS "patientId",
+      p.full_name AS "patientFullName",
       o.kind,
       o.status,
       o.payload,
@@ -340,14 +389,35 @@ async function getOrder({ tenantId, id }) {
       o.updated_at AS "updatedAt",
       o.cancelled_at AS "cancelledAt"
     FROM orders o
+    JOIN patients p
+      ON p.tenant_id = o.tenant_id
+     AND p.id = o.patient_id
     WHERE o.tenant_id = $1 AND o.id = $2
     LIMIT 1
     `,
     [tenantId, id]
   );
 
-  if (!rows[0]) throw new HttpError(404, 'Order not found');
-  return rows[0];
+  const row = rows[0];
+  if (!row) throw new HttpError(404, 'Order not found');
+
+  const payload = row.payload || {};
+  return {
+    ...row,
+    patientName: row.patientFullName || null,
+    patientFullName: row.patientFullName || null,
+
+    drugName: payload.medicationName || null,
+    medicationName: payload.medicationName || null,
+
+    requestedQty: payload.requestedQty ?? null,
+    dose: payload.dose ?? null,
+    route: payload.route ?? null,
+    frequency: payload.frequency ?? null,
+    duration: payload.duration ?? null,
+
+    pharmacy: payload.pharmacy ?? null,
+  };
 }
 
 /** ===========================
@@ -509,7 +579,6 @@ async function pharmacyPrepareTx({ tenantId, orderId, actorUserId, notes }) {
     if (order.kind !== 'MEDICATION') throw new HttpError(409, 'هذا الإجراء متاح فقط لطلبات الدواء');
     if (order.status === 'CANCELLED') throw new HttpError(409, 'الطلب ملغي');
 
-    // إذا مكتمل بالفعل: نرجع order الحالي بدون تغيير
     if (order.status === 'COMPLETED') {
       await client.query('COMMIT');
       return { order };
@@ -517,7 +586,7 @@ async function pharmacyPrepareTx({ tenantId, orderId, actorUserId, notes }) {
 
     const payload = order.payload || {};
     const requestedQty = _num(payload.requestedQty) ?? null;
-    const preparedQty = requestedQty; // FULL = requestedQty
+    const preparedQty = requestedQty;
 
     payload.pharmacy = {
       ...(payload.pharmacy || {}),
@@ -747,10 +816,13 @@ async function listPatientMedicationView({ tenantId, patientId, limit = 50, offs
       patientInstructionsAr: p.patientInstructionsAr ?? null,
       patientInstructionsEn: p.patientInstructionsEn ?? null,
       warningsText: p.warningsText ?? null,
+
+      // pharmacy info (if any)
+      pharmacy: p.pharmacy ?? null,
+      requestedQty: p.requestedQty ?? null,
     };
   });
 
-  // ✅ meta.total الصحيح = عدد النتائج الكلي (إذا تريد) يحتاج COUNT. حالياً مثل كودك: items.length
   return { items, meta: { limit, offset, total: items.length } };
 }
 
