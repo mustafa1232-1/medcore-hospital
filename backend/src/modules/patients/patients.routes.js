@@ -19,6 +19,22 @@ const patientLinkController = require('./patient_link.controller');
  * - ADMIN: full access
  */
 
+// ✅ UUID regex to prevent route shadowing (e.g. /assigned becomes NOT a patientId)
+const UUID_RE = '([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})';
+
+/**
+ * ✅ IMPORTANT:
+ * Put fixed/static routes BEFORE "/:id"
+ */
+
+// ✅ Doctor: list assigned patients
+router.get(
+  '/assigned',
+  requireAuth,
+  requireRole('DOCTOR', 'ADMIN'),
+  patientsController.listAssignedPatients
+);
+
 // List patients
 router.get(
   '/',
@@ -36,26 +52,9 @@ router.post(
   patientsController.createPatient
 );
 
-// Get single patient
-router.get(
-  '/:id',
-  requireAuth,
-  requireRole('RECEPTION', 'ADMIN', 'DOCTOR'),
-  patientsController.getPatientById
-);
-
-// Update patient basic info (Reception/Admin فقط)
-router.patch(
-  '/:id',
-  requireAuth,
-  requireRole('RECEPTION', 'ADMIN'),
-  validateBody(updatePatientSchema),
-  patientsController.updatePatient
-);
-
 // ✅ NEW: Patient Medical Record (History + Logs + Files + Admissions + Bed timeline)
 router.get(
-  '/:id/medical-record',
+  `/:id${UUID_RE}/medical-record`,
   requireAuth,
   requireRole('RECEPTION', 'ADMIN', 'DOCTOR'),
   patientsController.getPatientMedicalRecord
@@ -63,7 +62,7 @@ router.get(
 
 // ✅ NEW: Health advice by current department (based on active admission bed)
 router.get(
-  '/:id/health-advice',
+  `/:id${UUID_RE}/health-advice`,
   requireAuth,
   requireRole('RECEPTION', 'ADMIN', 'DOCTOR'),
   patientsController.getPatientHealthAdvice
@@ -71,14 +70,11 @@ router.get(
 
 /**
  * ✅ NEW: Patient linking (QR/Join Code) + cross-facility history
- *
- * - join-code: Reception/Admin يولدون كود انضمام للمريض داخل نفس الـ tenant
- * - external-history: Reception/Admin/Doctor يشوفون المنشآت الأخرى المرتبطة بحساب المريض (إن كان مرتبط)
  */
 
 // Generate join code for a patient (Reception/Admin only)
 router.post(
-  '/:id/join-code',
+  `/:id${UUID_RE}/join-code`,
   requireAuth,
   requireRole('RECEPTION', 'ADMIN'),
   patientLinkController.issueJoinCode
@@ -86,10 +82,27 @@ router.post(
 
 // View external history across facilities (Reception/Admin/Doctor)
 router.get(
-  '/:id/external-history',
+  `/:id${UUID_RE}/external-history`,
   requireAuth,
   requireRole('RECEPTION', 'ADMIN', 'DOCTOR'),
   patientLinkController.externalHistory
+);
+
+// Get single patient
+router.get(
+  `/:id${UUID_RE}`,
+  requireAuth,
+  requireRole('RECEPTION', 'ADMIN', 'DOCTOR'),
+  patientsController.getPatientById
+);
+
+// Update patient basic info (Reception/Admin فقط)
+router.patch(
+  `/:id${UUID_RE}`,
+  requireAuth,
+  requireRole('RECEPTION', 'ADMIN'),
+  validateBody(updatePatientSchema),
+  patientsController.updatePatient
 );
 
 module.exports = router;

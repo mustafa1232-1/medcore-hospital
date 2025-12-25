@@ -52,6 +52,26 @@ module.exports = {
     }
   },
 
+  // ✅ NEW: assigned patients for doctor
+  async listAssignedPatients(req, res, next) {
+    try {
+      const tenantId = req.user.tenantId;
+      const doctorUserId = req.user.userId;
+
+      const result = await patientsService.listAssignedPatients({
+        tenantId,
+        doctorUserId,
+        q: req.query.q,
+        limit: req.query.limit,
+        offset: req.query.offset,
+      });
+
+      return res.json(result);
+    } catch (err) {
+      return next(err);
+    }
+  },
+
   // ✅ NEW
   async getPatientMedicalRecord(req, res, next) {
     try {
