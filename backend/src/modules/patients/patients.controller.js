@@ -1,10 +1,19 @@
 // src/modules/patients/patients.controller.js
 const patientsService = require('./patients.service');
 
+function getTenantId(req) {
+  return req.user.tenantId;
+}
+
+function getUserId(req) {
+  // ✅ standard in your backend (like admissions.controller.js)
+  return req.user.sub || req.user.userId || req.user.id;
+}
+
 module.exports = {
   async listPatients(req, res, next) {
     try {
-      const tenantId = req.user.tenantId;
+      const tenantId = getTenantId(req);
 
       const result = await patientsService.listPatients({
         tenantId,
@@ -19,7 +28,7 @@ module.exports = {
 
   async createPatient(req, res, next) {
     try {
-      const tenantId = req.user.tenantId;
+      const tenantId = getTenantId(req);
 
       const patient = await patientsService.createPatient(tenantId, req.body);
       return res.status(201).json(patient);
@@ -30,7 +39,7 @@ module.exports = {
 
   async getPatientById(req, res, next) {
     try {
-      const tenantId = req.user.tenantId;
+      const tenantId = getTenantId(req);
       const patientId = req.params.id;
 
       const patient = await patientsService.getPatientById(tenantId, patientId);
@@ -42,7 +51,7 @@ module.exports = {
 
   async updatePatient(req, res, next) {
     try {
-      const tenantId = req.user.tenantId;
+      const tenantId = getTenantId(req);
       const patientId = req.params.id;
 
       const patient = await patientsService.updatePatient(tenantId, patientId, req.body);
@@ -52,13 +61,11 @@ module.exports = {
     }
   },
 
-  // ✅ Assigned patients for doctor
+  // ✅ Assigned patients for doctor/admin
   async listAssignedPatients(req, res, next) {
     try {
-      const tenantId = req.user.tenantId;
-
-      // ✅ الصحيح حسب JWT عندك (كما في admissions.controller.js)
-      const doctorUserId = req.user.sub;
+      const tenantId = getTenantId(req);
+      const doctorUserId = getUserId(req);
 
       const result = await patientsService.listAssignedPatients({
         tenantId,
@@ -76,7 +83,7 @@ module.exports = {
 
   async getPatientMedicalRecord(req, res, next) {
     try {
-      const tenantId = req.user.tenantId;
+      const tenantId = getTenantId(req);
       const patientId = req.params.id;
 
       const data = await patientsService.getPatientMedicalRecord({
@@ -94,7 +101,7 @@ module.exports = {
 
   async getPatientHealthAdvice(req, res, next) {
     try {
-      const tenantId = req.user.tenantId;
+      const tenantId = getTenantId(req);
       const patientId = req.params.id;
 
       const data = await patientsService.getPatientHealthAdvice({

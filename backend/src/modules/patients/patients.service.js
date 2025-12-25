@@ -514,12 +514,81 @@ async function getPatientHealthAdvice({ tenantId, patientId }) {
     advice: adviceCatalogByDepartmentCode(row.departmentCode),
   };
 }
+// ✅ NEW: listAssignedPatients (Doctor/Admin)
+async function listAssignedPatients({ tenantId, doctorUserId, q, limit, offset }) {
+  if (!tenantId) throw new HttpError(400, 'Missing tenantId');
+  if (!doctorUserId) throw new HttpError(400, 'Missing doctorUserId');
+
+  const safeLimit = clampInt(limit, { min: 1, max: 100, fallback: 20 });
+  const safeOffset = clampInt(offset, { min: 0, max: 1000000, fallback: 0 });
+
+  const where = [
+    'a.tenant_id = $1',
+    'a.assigned_doctor_user_id = $2',
+    "a.status IN ('PENDING','ACTIVE')",
+  ];
+  const params = [tenantId, doctorUserId];
+  let i = 3;
+
+  if (q) {
+    params.push(`%${String(q).toLowerCase()}%`);
+    where.push(`(LOWER(p.full_name) LIKE $${i} OR p.phone LIKE $${i})`);
+    i++;
+  }
+
+  const countQ = await pool.query(
+    `
+    SELECT COUNT(*)::int AS count
+    FROM admissions a
+    JOIN patients p
+      ON p.tenant_id = a.tenant_id AND p.id = a.patient_id
+    WHERE ${where.join(' AND ')}
+    `,
+    params
+  );
+  const total = countQ.rows[0]?.count || 0;
+
+  params.push(safeLimit, safeOffset);
+
+  const { rows } = await pool.query(
+    `
+    SELECT
+      p.id,
+      p.full_name AS "fullName",
+      p.phone,
+      p.gender,
+      p.date_of_birth AS "dateOfBirth",
+      p.is_active AS "isActive",
+      p.created_at AS "createdAt",
+
+      a.id AS "admissionId",
+      a.status AS "admissionStatus",
+      a.reason AS "admissionReason",
+      a.notes  AS "admissionNotes",
+      a.created_at AS "admissionCreatedAt"
+    FROM admissions a
+    JOIN patients p
+      ON p.tenant_id = a.tenant_id AND p.id = a.patient_id
+    WHERE ${where.join(' AND ')}
+    ORDER BY a.created_at DESC
+    LIMIT $${i} OFFSET $${i + 1}
+    `,
+    params
+  );
+
+  return {
+    items: rows,
+    meta: { total, limit: safeLimit, offset: safeOffset },
+  };
+}
+
 
 module.exports = {
   listPatients,
   createPatient,
   getPatientById,
   updatePatient,
+  listAssignedPatients, // ✅ ADD THIS
   getPatientMedicalRecord,
   getPatientHealthAdvice,
 };

@@ -9,7 +9,7 @@ const { validateBody } = require('../../middlewares/validate');
 const patientsController = require('./patients.controller');
 const { createPatientSchema, updatePatientSchema } = require('./patients.validators');
 
-// ✅ Join code + external history
+// ✅ Join code + external history (cross-facility)
 const patientLinkController = require('./patient_link.controller');
 
 /**
@@ -19,7 +19,7 @@ const patientLinkController = require('./patient_link.controller');
  * - ADMIN: full access
  */
 
-// ✅ Doctor: Assigned patients
+// ✅ Doctor/Admin: Assigned patients
 // IMPORTANT: must be BEFORE "/:id" routes
 router.get(
   '/assigned',
@@ -36,7 +36,7 @@ router.get(
   patientsController.listPatients
 );
 
-// Create patient
+// Create patient (Reception/Admin only)
 router.post(
   '/',
   requireAuth,
@@ -45,7 +45,7 @@ router.post(
   patientsController.createPatient
 );
 
-// Medical record
+// Medical record (keep before "/:id")
 router.get(
   '/:id/medical-record',
   requireAuth,
@@ -53,7 +53,7 @@ router.get(
   patientsController.getPatientMedicalRecord
 );
 
-// Health advice
+// Health advice (keep before "/:id")
 router.get(
   '/:id/health-advice',
   requireAuth,
@@ -61,7 +61,7 @@ router.get(
   patientsController.getPatientHealthAdvice
 );
 
-// Generate join code
+// Generate join code (Reception/Admin only)
 router.post(
   '/:id/join-code',
   requireAuth,
@@ -69,7 +69,7 @@ router.post(
   patientLinkController.issueJoinCode
 );
 
-// External history
+// External history across facilities
 router.get(
   '/:id/external-history',
   requireAuth,
@@ -85,7 +85,7 @@ router.get(
   patientsController.getPatientById
 );
 
-// Update patient
+// Update patient (Reception/Admin only)
 router.patch(
   '/:id',
   requireAuth,
