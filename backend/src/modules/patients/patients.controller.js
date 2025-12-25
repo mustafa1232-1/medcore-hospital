@@ -45,7 +45,11 @@ module.exports = {
       const tenantId = req.user.tenantId;
       const patientId = req.params.id;
 
-      const patient = await patientsService.updatePatient(tenantId, patientId, req.body);
+      const patient = await patientsService.updatePatient(
+        tenantId,
+        patientId,
+        req.body
+      );
       return res.json(patient);
     } catch (err) {
       return next(err);
@@ -56,12 +60,13 @@ module.exports = {
   async listAssignedPatients(req, res, next) {
     try {
       const tenantId = req.user.tenantId;
-      const doctorUserId = req.user.userId;
+
+      // support both payload shapes: { userId } or { id }
+      const doctorUserId = req.user.userId || req.user.id;
 
       const result = await patientsService.listAssignedPatients({
         tenantId,
         doctorUserId,
-        q: req.query.q,
         limit: req.query.limit,
         offset: req.query.offset,
       });
