@@ -1,3 +1,4 @@
+const { HttpError } = require('../../utils/httpError');
 const svc = require('./admissions.service');
 
 function tenantId(req) {
@@ -5,7 +6,7 @@ function tenantId(req) {
 }
 
 function userId(req) {
-  return req.user.sub; // ✅ مهم (كما في me.routes.js)
+  return req.user.sub;
 }
 
 async function list(req, res, next) {
@@ -26,7 +27,6 @@ async function create(req, res, next) {
   } catch (e) { next(e); }
 }
 
-// ✅ NEW: Outpatient visit by doctor (ACTIVE immediately, no bed)
 async function createOutpatient(req, res, next) {
   try {
     const admission = await svc.createOutpatientVisit({
@@ -39,7 +39,6 @@ async function createOutpatient(req, res, next) {
   } catch (e) { next(e); }
 }
 
-// ✅ NEW: get active admission for patient
 async function getActiveForPatient(req, res, next) {
   try {
     const patientId = String(req.query.patientId || '').trim();
@@ -118,8 +117,8 @@ async function cancel(req, res, next) {
 module.exports = {
   list,
   create,
-  createOutpatient,     // ✅ new
-  getActiveForPatient,  // ✅ new
+  createOutpatient,
+  getActiveForPatient,
   getOne,
   update,
   assignBed,

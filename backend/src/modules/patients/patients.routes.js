@@ -9,7 +9,7 @@ const { validateBody } = require('../../middlewares/validate');
 const patientsController = require('./patients.controller');
 const { createPatientSchema, updatePatientSchema } = require('./patients.validators');
 
-// ✅ Join code + external history (cross-facility)
+// Join code + external history (cross-facility)
 const patientLinkController = require('./patient_link.controller');
 
 /**
@@ -26,6 +26,18 @@ router.get(
   requireAuth,
   requireRole('DOCTOR', 'ADMIN'),
   patientsController.listAssignedPatients
+);
+
+// ✅ Compatibility guard: prevent "/lookup" being treated as ":id"
+router.get(
+  '/lookup',
+  requireAuth,
+  requireRole('RECEPTION', 'ADMIN', 'DOCTOR'),
+  async (req, res) => {
+    return res
+      .status(410)
+      .json({ message: 'Deprecated. Use GET /api/lookups/patients' });
+  }
 );
 
 // List patients

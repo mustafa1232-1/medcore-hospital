@@ -1,3 +1,4 @@
+// src/modules/admissions/admissions.routes.js
 const express = require('express');
 const { requireAuth } = require('../../middlewares/auth');
 const { requireRole } = require('../../middlewares/roles');
@@ -6,7 +7,7 @@ const { validateBody } = require('../../middlewares/validate');
 const ctrl = require('./admissions.controller');
 const {
   createAdmissionSchema,
-  createOutpatientSchema, // ✅ new
+  createOutpatientSchema,
   updateAdmissionSchema,
   assignBedSchema,
   closeAdmissionSchema,
@@ -17,36 +18,37 @@ const router = express.Router();
 // LIST: Admin only
 router.get('/', requireAuth, requireRole('ADMIN'), ctrl.list);
 
-// CREATE: Reception creates PENDING
+// ✅ CREATE (Inpatient/Pending):
+// was RECEPTION only; now allow DOCTOR too (as you requested)
 router.post(
   '/',
   requireAuth,
-  requireRole('RECEPTION'),
+  requireRole('RECEPTION', 'DOCTOR', 'ADMIN'),
   validateBody(createAdmissionSchema),
   ctrl.create
 );
 
-// ✅ NEW: DOCTOR creates outpatient visit (ACTIVE, no bed)
+// ✅ DOCTOR creates outpatient visit (ACTIVE, no bed)
 router.post(
   '/outpatient',
   requireAuth,
-  requireRole('DOCTOR'),
+  requireRole('DOCTOR', 'ADMIN'),
   validateBody(createOutpatientSchema),
   ctrl.createOutpatient
 );
 
-// ✅ NEW: DOCTOR gets active admission for patient
+// ✅ DOCTOR gets active admission for patient
 router.get(
   '/active',
   requireAuth,
-  requireRole('DOCTOR'),
+  requireRole('DOCTOR', 'ADMIN'),
   ctrl.getActiveForPatient
 );
 
-// VIEW: Admin
+// VIEW: Admin only (keep)
 router.get('/:id', requireAuth, requireRole('ADMIN'), ctrl.getOne);
 
-// UPDATE: Admin
+// UPDATE: Admin only (keep)
 router.patch(
   '/:id',
   requireAuth,
@@ -55,15 +57,16 @@ router.patch(
   ctrl.update
 );
 
-// Assign bed: Admin
+// ✅ Assign bed: allow DOCTOR too (your request)
 router.post(
   '/:id/assign-bed',
   requireAuth,
-  requireRole('ADMIN'),
+  requireRole('ADMIN', 'DOCTOR'),
   validateBody(assignBedSchema),
   ctrl.assignBed
 );
 
+// release bed: keep admin (you can add DOCTOR if you want)
 router.post(
   '/:id/release-bed',
   requireAuth,

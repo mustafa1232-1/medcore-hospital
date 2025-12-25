@@ -24,7 +24,9 @@ function normalizeRole(v) {
 // UUID check (خفيف)
 function isUuid(v) {
   const s = String(v || '').trim();
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s);
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    s
+  );
 }
 
 // ✅ Patients lookup
@@ -60,7 +62,7 @@ router.get('/patients', requireAuth, async (req, res, next) => {
 
     const r = await pool.query(sql, params);
 
-    const items = r.rows.map(x => ({
+    const items = r.rows.map((x) => ({
       id: x.id,
       label: x.phone ? `${x.fullName} — ${x.phone}` : `${x.fullName}`,
       sub: x.phone || '',
@@ -99,9 +101,9 @@ router.get('/staff', requireAuth, async (req, res, next) => {
     // ✅ allow: ADMIN / DOCTOR / RECEPTION
     const rolesRaw = Array.isArray(req.user?.roles) ? req.user.roles : [];
     const roles = rolesRaw
-      .map(r => (typeof r === 'string' ? r : r?.name))
+      .map((r) => (typeof r === 'string' ? r : r?.name))
       .filter(Boolean)
-      .map(x => String(x).toUpperCase().trim());
+      .map((x) => String(x).toUpperCase().trim());
 
     const canLookupStaff =
       roles.includes('ADMIN') || roles.includes('DOCTOR') || roles.includes('RECEPTION');
@@ -159,7 +161,7 @@ router.get('/staff', requireAuth, async (req, res, next) => {
 
     const r = await pool.query(sql, params);
 
-    const items = r.rows.map(x => ({
+    const items = r.rows.map((x) => ({
       id: x.id,
       label: x.staffCode ? `${x.fullName} — ${x.staffCode}` : `${x.fullName}`,
       sub: x.phone || x.email || '',
@@ -178,6 +180,7 @@ router.get('/staff', requireAuth, async (req, res, next) => {
 
 /**
  * ✅ Departments lookup
+ * GET /api/lookups/departments?q=&limit=
  */
 router.get('/departments', requireAuth, async (req, res, next) => {
   try {
@@ -209,7 +212,7 @@ router.get('/departments', requireAuth, async (req, res, next) => {
       params
     );
 
-    const items = rows.map(d => ({
+    const items = rows.map((d) => ({
       id: d.id,
       code: d.code,
       name: d.name,
@@ -219,6 +222,110 @@ router.get('/departments', requireAuth, async (req, res, next) => {
     return res.json({ ok: true, items });
   } catch (e) {
     return next(e);
+  }
+});
+
+/**
+ * ✅ NEW: Rooms lookup (by department)
+ * GET /api/lookups/rooms?departmentId=<uuid>&limit=
+ */
+router.get('/rooms', requireAuth, async (req, res, next) => {
+  try {
+    const tenantId = req.user?.tenantId;
+    if (!tenantId) return next(new HttpError(401, 'Unauthorized: invalid payload'));
+
+    const departmentId = str(req.query.departmentId);
+    if (!departmentId || !isUuid(departmentId)) {
+      return next(new HttpError(400, 'departmentId is required and must be a valid UUID'));
+    }
+
+    const limit = Math.min(toInt(req.query.limit, 200), 300);
+
+    const { rows } = await pool.query(
+      `
+      SELECT
+        id,
+        code,
+        name
+      FROM rooms
+      WHERE tenant_id = $1
+        AND department_id = $2
+        AND is_active = true
+      ORDER BY code ASC
+      LIMIT $3
+      `,
+      [tenantId, departmentId, limit]
+    );
+
+    const items = rows.map((r) => ({
+      id: r.id,
+      code: r.code,
+      name: r.name,
+      label: r.name ? `${r.code} — ${r.name}` : r.code,
+    }));
+
+    return res.json({ ok: true, items });
+  } catch (e) {
+    next(e);
+  }
+});
+
+/**
+ * ✅ NEW: Beds lookup (by room) — default onlyAvailable=true
+ * GET /api/lookups/beds?roomId=<uuid>&onlyAvailable=true&limit=
+ */
+router.get('/beds', requireAuth, async (req, res, next) => {
+  try {
+    const tenantId = req.user?.tenantId;
+    if (!tenantId) return next(new HttpError(401, 'Unauthorized: invalid payload'));
+
+    const roomId = str(req.query.roomId);
+    if (!roomId || !isUuid(roomId)) {
+      return next(new HttpError(400, 'roomId is required and must be a valid UUID'));
+    }
+
+    const onlyAvailable = String(req.query.onlyAvailable ?? 'true').toLowerCase() === 'true';
+    const limit = Math.min(toInt(req.query.limit, 300), 500);
+
+    const params = [tenantId, roomId, limit];
+
+    let where = `
+      b.tenant_id = $1
+      AND b.room_id = $2
+      AND b.is_active = true
+    `;
+
+    if (onlyAvailable) {
+      // allow AVAILABLE/RESERVED as "pickable" beds
+      where += ` AND b.status IN ('AVAILABLE','RESERVED')`;
+    }
+
+    const { rows } = await pool.query(
+      `
+      SELECT
+        b.id,
+        b.code,
+        b.status,
+        b.room_id AS "roomId"
+      FROM beds b
+      WHERE ${where}
+      ORDER BY b.code ASC
+      LIMIT $3
+      `,
+      params
+    );
+
+    const items = rows.map((b) => ({
+      id: b.id,
+      code: b.code,
+      status: b.status,
+      roomId: b.roomId,
+      label: b.status ? `${b.code} (${b.status})` : b.code,
+    }));
+
+    return res.json({ ok: true, items });
+  } catch (e) {
+    next(e);
   }
 });
 
