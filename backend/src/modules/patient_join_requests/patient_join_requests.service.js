@@ -99,27 +99,28 @@ async function submitByCode({ patientAccountId, code }) {
 async function listMine({ tenantId, limit, offset }) {
   if (!tenantId) throw new HttpError(400, 'tenantId is required');
 
-  const q = await pool.query(
-    `
-    SELECT
-      r.id,
-      r.tenant_id AS "tenantId",
-      r.status,
-      r.created_at AS "createdAt",
-      r.decided_at AS "decidedAt",
-      r.patient_account_id AS "patientAccountId",
-      pa.full_name AS "patientFullName",
-      pa.phone AS "patientPhone",
-      jc.code AS "code"
-    FROM patient_join_requests r
-    LEFT JOIN patient_accounts pa ON pa.id = r.patient_account_id
-    LEFT JOIN patient_join_codes jc ON jc.id = r.join_code_id
-    WHERE r.tenant_id = $1 AND r.status = 'PENDING'
-    ORDER BY r.created_at DESC
-    LIMIT $2 OFFSET $3
-    `,
-    [tenantId, limit, offset]
-  );
+  // داخل submitByCode (service)
+const q = await pool.query(
+  `
+  SELECT
+    id,
+    tenant_id AS "tenantId",
+    status,
+    max_uses AS "maxUses",
+    used_count AS "usedCount",
+    expires_at AS "expiresAt"
+  FROM patient_join_codes
+  WHERE code = $1
+    AND status = 'ACTIVE'
+    AND (expires_at IS NULL OR expires_at > now())
+  ORDER BY created_at DESC
+  LIMIT 1
+  `,
+  [code]
+);
+
+if (q.rowCount === 0) throw new HttpError(400, 'Invalid code');
+
 
   return { ok: true, data: { items: q.rows, limit, offset } };
 }
