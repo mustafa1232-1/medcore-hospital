@@ -2,8 +2,6 @@
 const pool = require('../../db/pool');
 const { HttpError } = require('../../utils/httpError');
 const { randomCode } = require('../../utils/joinCode');
-
-// انت تستخدم sha256 من patient_link.service — نخلي نفس المصدر حتى ما نغير شيء
 const { sha256 } = require('./patient_link.service');
 
 async function issueJoinCode({ tenantId, patientId, ttlMinutes = 30, len = 6 }) {
@@ -13,7 +11,7 @@ async function issueJoinCode({ tenantId, patientId, ttlMinutes = 30, len = 6 }) 
   const safeLen = Math.max(4, Math.min(10, Number(len) || 6));
   const safeTtl = Math.max(3, Math.min(24 * 60, Number(ttlMinutes) || 30));
 
-  // تأكد المريض موجود في المنشأة
+  // Ensure patient exists
   const q = await pool.query(
     `
     SELECT id
@@ -32,17 +30,16 @@ async function issueJoinCode({ tenantId, patientId, ttlMinutes = 30, len = 6 }) 
     `
     UPDATE patients
     SET join_code_hash = $3,
-        join_code_expires_at = now() + ($4 || ' minutes')::interval
+        join_code_expires_at = now() + ($4::int * interval '1 minute')
     WHERE tenant_id = $1 AND id = $2
     RETURNING
       id,
       tenant_id AS "tenantId",
       join_code_expires_at AS "expiresAt"
     `,
-    [tenantId, patientId, hash, String(safeTtl)]
+    [tenantId, patientId, hash, safeTtl]
   );
 
-  // payload للـ QR / join
   const payload = {
     tenantId: String(tenantId),
     patientId: String(patientId),
@@ -54,14 +51,13 @@ async function issueJoinCode({ tenantId, patientId, ttlMinutes = 30, len = 6 }) 
     data: {
       tenantId: payload.tenantId,
       patientId: payload.patientId,
-      joinCode: payload.joinCode,          // الكود القصير
-      expiresAt: up.rows[0]?.expiresAt,    // وقت الانتهاء
-      qrPayload: payload,                  // هذا حطه في QR كما هو JSON
+      joinCode: payload.joinCode,
+      expiresAt: up.rows[0]?.expiresAt,
+      qrPayload: payload,
     },
   };
 }
 
-// اختياري: إلغاء/إبطال الكود
 async function revokeJoinCode({ tenantId, patientId }) {
   if (!tenantId) throw new HttpError(400, 'tenantId is required');
   if (!patientId) throw new HttpError(400, 'patientId is required');

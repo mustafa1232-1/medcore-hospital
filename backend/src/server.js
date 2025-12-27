@@ -65,6 +65,7 @@ const lookupsRoutes = require('./routes/lookups.routes');
 const patientsRoutes = require('./modules/patients/patients.routes');
 const admissionsRoutes = require('./modules/admissions/admissions.routes');
 const bedHistoryRoutes = require('./modules/bed_history/bed_history.routes');
+const patientJoinCodesRoutes = require('./modules/patient_join_codes/patient_join_codes.routes');
 
 // Existing modules
 const ordersRoutes = require('./modules/orders/orders.routes');
@@ -108,7 +109,7 @@ app.use('/api/pharmacy', pharmacyRoutes);
 
 // ✅ Staff join-code routes (unchanged URL paths)
 app.use('/api', patientJoinCodeRoutes);
-
+app.use('/api/patient-join-codes', patientJoinCodesRoutes)
 // Patient join (existing)
 app.use('/api/patient', patientJoinRoutes);
 

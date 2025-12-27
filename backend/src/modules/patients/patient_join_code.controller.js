@@ -10,7 +10,13 @@ module.exports = {
       const len = req.body?.len;
       const ttlMinutes = req.body?.ttlMinutes;
 
-      const out = await svc.issueJoinCode({ tenantId, patientId, len, ttlMinutes });
+      const out = await svc.issueJoinCode({
+        tenantId,
+        patientId,
+        len,
+        ttlMinutes,
+      });
+
       return res.json(out);
     } catch (e) {
       return next(e);
