@@ -1,16 +1,32 @@
 class RoleUtils {
-  static List<String> rolesFromUser(dynamic user) {
-    if (user is Map<String, dynamic>) {
-      final raw = user['roles'];
-      if (raw is List) {
-        return raw.map((e) => e.toString().toUpperCase().trim()).toList();
+  static bool hasRole(Map<String, dynamic>? user, String role) {
+    if (user == null) return false;
+
+    final target = role.toUpperCase().trim();
+
+    final rolesRaw = user['roles'];
+    if (rolesRaw is List) {
+      for (final r in rolesRaw) {
+        if (r == null) continue;
+
+        if (r is String) {
+          if (r.toUpperCase().trim() == target) return true;
+        } else if (r is Map) {
+          final code = (r['code'] ?? r['name'] ?? r['role'] ?? r['value'] ?? '')
+              .toString();
+          if (code.toUpperCase().trim() == target) return true;
+        } else {
+          final s = r.toString();
+          if (s.toUpperCase().trim() == target) return true;
+        }
       }
     }
-    return const [];
-  }
 
-  static bool hasRole(dynamic user, String role) {
-    final roles = rolesFromUser(user);
-    return roles.contains(role.toUpperCase().trim());
+    // fallback: single role string
+    final single = (user['role'] ?? user['userRole'] ?? user['type'] ?? '')
+        .toString();
+    if (single.isNotEmpty && single.toUpperCase().trim() == target) return true;
+
+    return false;
   }
 }

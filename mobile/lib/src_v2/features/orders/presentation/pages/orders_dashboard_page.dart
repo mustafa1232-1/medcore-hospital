@@ -11,12 +11,13 @@ class OrdersDashboardPage extends StatefulWidget {
 }
 
 class _OrdersDashboardPageState extends State<OrdersDashboardPage> {
-  final _api = OrdersApiService();
-  final _search = TextEditingController();
+  final _api = const OrdersApiService();
+  final _admissionId = TextEditingController();
+  final _patientId = TextEditingController();
 
-  String _status = 'ALL';
-  String _target = 'ALL';
-  String _priority = 'ALL';
+  String _kind = 'ALL'; // ALL | MEDICATION | LAB | PROCEDURE
+  String _status =
+      'ALL'; // ALL | CREATED | PARTIALLY_COMPLETED | COMPLETED | OUT_OF_STOCK | CANCELLED | IN_PROGRESS
 
   bool _loading = true;
   String? _error;
@@ -30,7 +31,8 @@ class _OrdersDashboardPageState extends State<OrdersDashboardPage> {
 
   @override
   void dispose() {
-    _search.dispose();
+    _admissionId.dispose();
+    _patientId.dispose();
     super.dispose();
   }
 
@@ -41,12 +43,24 @@ class _OrdersDashboardPageState extends State<OrdersDashboardPage> {
     });
 
     try {
-      final items = await _api.listOrders(
-        q: _search.text,
-        status: _status,
-        target: _target,
-        priority: _priority,
+      final raw = await _api.listOrders(
+        admissionId: _admissionId.text.trim().isEmpty
+            ? null
+            : _admissionId.text.trim(),
+        patientId: _patientId.text.trim().isEmpty
+            ? null
+            : _patientId.text.trim(),
+        kind: _kind == 'ALL' ? null : _kind,
+        status: _status == 'ALL' ? null : _status,
+        limit: 50,
+        offset: 0,
       );
+
+      final itemsAny = raw['items'];
+      final items = (itemsAny is List)
+          ? itemsAny.cast<Map<String, dynamic>>()
+          : <Map<String, dynamic>>[];
+
       if (!mounted) return;
       setState(() {
         _items = items;
@@ -74,22 +88,6 @@ class _OrdersDashboardPageState extends State<OrdersDashboardPage> {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
         children: [
-          // Search
-          TextField(
-            controller: _search,
-            textInputAction: TextInputAction.search,
-            onSubmitted: (_) => _load(),
-            decoration: InputDecoration(
-              prefixIcon: const Icon(Icons.search_rounded),
-              hintText: t.orders_search_hint,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 12),
-
           // Filters Card
           Container(
             padding: const EdgeInsets.all(12),
@@ -101,35 +99,60 @@ class _OrdersDashboardPageState extends State<OrdersDashboardPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text(
-                  t.staff_apply, // “تطبيق”
-                  style: const TextStyle(fontWeight: FontWeight.w900),
+                const Text(
+                  'Filters',
+                  style: TextStyle(fontWeight: FontWeight.w900),
                 ),
                 const SizedBox(height: 10),
+
+                TextField(
+                  controller: _admissionId,
+                  decoration: InputDecoration(
+                    labelText: 'Admission ID (اختياري)',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+
+                TextField(
+                  controller: _patientId,
+                  decoration: InputDecoration(
+                    labelText: 'Patient ID (اختياري)',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+
+                _dropdown(
+                  context,
+                  label: 'Kind',
+                  value: _kind,
+                  items: const ['ALL', 'MEDICATION', 'LAB', 'PROCEDURE'],
+                  onChanged: (v) => setState(() => _kind = v),
+                ),
+                const SizedBox(height: 10),
+
                 _dropdown(
                   context,
                   label: 'Status',
                   value: _status,
-                  items: const ['ALL', 'PENDING', 'STARTED', 'COMPLETED'],
+                  items: const [
+                    'ALL',
+                    'CREATED',
+                    'IN_PROGRESS',
+                    'PARTIALLY_COMPLETED',
+                    'COMPLETED',
+                    'OUT_OF_STOCK',
+                    'CANCELLED',
+                  ],
                   onChanged: (v) => setState(() => _status = v),
                 ),
-                const SizedBox(height: 10),
-                _dropdown(
-                  context,
-                  label: t.orders_target,
-                  value: _target,
-                  items: const ['ALL', 'NURSE', 'LAB', 'PHARMACY'],
-                  onChanged: (v) => setState(() => _target = v),
-                ),
-                const SizedBox(height: 10),
-                _dropdown(
-                  context,
-                  label: t.orders_priority,
-                  value: _priority,
-                  items: const ['ALL', 'NORMAL', 'URGENT', 'STAT'],
-                  onChanged: (v) => setState(() => _priority = v),
-                ),
                 const SizedBox(height: 12),
+
                 FilledButton.icon(
                   onPressed: _load,
                   icon: const Icon(Icons.filter_alt_rounded),
@@ -141,14 +164,19 @@ class _OrdersDashboardPageState extends State<OrdersDashboardPage> {
 
           const SizedBox(height: 12),
 
-          // Summary chips
           Wrap(
             spacing: 10,
             runSpacing: 10,
             children: [
-              _statChip(context, 'PENDING', _countBy('PENDING')),
-              _statChip(context, 'STARTED', _countBy('STARTED')),
+              _statChip(context, 'CREATED', _countBy('CREATED')),
+              _statChip(
+                context,
+                'PARTIALLY_COMPLETED',
+                _countBy('PARTIALLY_COMPLETED'),
+              ),
               _statChip(context, 'COMPLETED', _countBy('COMPLETED')),
+              _statChip(context, 'OUT_OF_STOCK', _countBy('OUT_OF_STOCK')),
+              _statChip(context, 'CANCELLED', _countBy('CANCELLED')),
             ],
           ),
 
@@ -224,31 +252,24 @@ class _OrdersDashboardPageState extends State<OrdersDashboardPage> {
   }
 
   Widget _orderTile(BuildContext context, Map<String, dynamic> o) {
-    final t = AppLocalizations.of(context);
-
     final id = (o['id'] ?? '').toString();
-    final code = (o['code'] ?? o['orderCode'] ?? '').toString();
+    final kind = (o['kind'] ?? '').toString();
     final status = (o['status'] ?? '').toString();
-    final patient = (o['patientName'] ?? o['patient'] ?? '').toString();
-    final room = (o['roomCode'] ?? o['room'] ?? '').toString();
-    final bed = (o['bedCode'] ?? o['bed'] ?? '').toString();
+    final payload = (o['payload'] is Map)
+        ? (o['payload'] as Map).cast<String, dynamic>()
+        : <String, dynamic>{};
+
+    String title = id;
+    if (kind == 'MEDICATION') title = 'MED: ${payload['medicationName'] ?? ''}';
+    if (kind == 'LAB') title = 'LAB: ${payload['testName'] ?? ''}';
+    if (kind == 'PROCEDURE') title = 'PROC: ${payload['procedureName'] ?? ''}';
 
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
       child: ListTile(
-        title: Text(
-          code.isNotEmpty ? code : id,
-          style: const TextStyle(fontWeight: FontWeight.w900),
-        ),
-        subtitle: Text(
-          [
-            if (patient.isNotEmpty) '${t.orders_patient}: $patient',
-            if (room.isNotEmpty || bed.isNotEmpty)
-              '${t.orders_room_bed}: $room / $bed',
-            if (status.isNotEmpty) 'status: $status',
-          ].join('\n'),
-        ),
+        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w900)),
+        subtitle: Text('Kind: $kind\nStatus: $status'),
         trailing: const Icon(Icons.chevron_right_rounded),
         onTap: () async {
           await Navigator.of(context).push(

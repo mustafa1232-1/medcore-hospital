@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 
-import '../src/core/auth/auth_store.dart';
+import 'core/auth/auth_store.dart';
 import '../src/core/settings/app_settings_store.dart';
 import '../src/core/settings/app_theme.dart';
 import '../src/l10n/app_localizations.dart';

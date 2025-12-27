@@ -1,5 +1,5 @@
 import 'package:dio/dio.dart';
-import 'package:mobile/src/core/api/api_client.dart';
+import 'package:mobile/src_v2/core/api/api_client.dart';
 
 class RoomsApiServiceV2 {
   Dio get _dio => ApiClient.dio;

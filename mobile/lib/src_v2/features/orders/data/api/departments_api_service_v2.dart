@@ -1,6 +1,6 @@
 // lib/src_v2/features/orders/data/api/departments_api_service_v2.dart
 import 'package:dio/dio.dart';
-import 'package:mobile/src/core/api/api_client.dart';
+import 'package:mobile/src_v2/core/api/api_client.dart';
 
 class DepartmentsApiServiceV2 {
   Dio get _dio => ApiClient.dio;

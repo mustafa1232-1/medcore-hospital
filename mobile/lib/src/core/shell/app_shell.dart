@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../../core/auth/auth_store.dart';
+import '../../../src_v2/core/auth/auth_store.dart';
 
-import '../../features/auth/login_page.dart';
+import '../../../src_v2/features/auth/login_page.dart';
 import '../../features/home/home_page.dart';
 import '../../features/staff/staff_page.dart';
 import '../../features/account/account_page.dart';

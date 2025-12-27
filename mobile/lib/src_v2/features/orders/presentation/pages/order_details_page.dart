@@ -1,3 +1,5 @@
+// ignore_for_file: use_build_context_synchronously, curly_braces_in_flow_control_structures
+
 import 'package:flutter/material.dart';
 import 'package:mobile/src/l10n/app_localizations.dart';
 import 'package:mobile/src_v2/features/orders/data/services/orders_api_service.dart';
@@ -23,6 +25,12 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
     _load();
   }
 
+  Map<String, dynamic> _pickOrder(Map<String, dynamic> raw) {
+    final data = raw['data'];
+    if (data is Map) return data.cast<String, dynamic>();
+    return raw;
+  }
+
   Future<void> _load() async {
     setState(() {
       _loading = true;
@@ -30,7 +38,8 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
     });
 
     try {
-      final o = await _api.getOrder(widget.orderId);
+      final raw = await _api.getOrderById(id: widget.orderId);
+      final o = _pickOrder(raw);
       if (!mounted) return;
       setState(() {
         _order = o;
@@ -75,59 +84,107 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
               ),
             )
           else ...[
-            _kv('ID', widget.orderId),
-            _kv(
-              'code',
-              (_order?['code'] ?? _order?['orderCode'] ?? '').toString(),
-            ),
-            _kv('status', (_order?['status'] ?? '').toString()),
-            _kv(t.orders_patient, (_order?['patientName'] ?? '').toString()),
-            _kv(
-              t.orders_room_bed,
-              '${_order?['roomCode'] ?? ''} / ${_order?['bedCode'] ?? ''}',
-            ),
-            _kv(t.orders_from_doctor, (_order?['fromName'] ?? '').toString()),
-            _kv(t.orders_to, (_order?['toName'] ?? '').toString()),
-            _kv(t.orders_priority, (_order?['priority'] ?? '').toString()),
-            _kv(t.orders_notes, (_order?['notes'] ?? '').toString()),
+            _detailsCard(),
             const SizedBox(height: 14),
-            Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: [
-                OutlinedButton.icon(
-                  onPressed: () async {
-                    final reason = await _askReason(
+            _actionsCard(),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _detailsCard() {
+    final o = _order ?? {};
+    final payload = (o['payload'] is Map)
+        ? (o['payload'] as Map).cast<String, dynamic>()
+        : <String, dynamic>{};
+
+    final kind = (o['kind'] ?? '').toString();
+    final status = (o['status'] ?? '').toString();
+
+    String title = 'Order';
+    if (kind == 'MEDICATION')
+      title = 'طلب دواء: ${payload['medicationName'] ?? ''}';
+    if (kind == 'LAB') title = 'طلب تحليل: ${payload['testName'] ?? ''}';
+    if (kind == 'PROCEDURE')
+      title = 'طلب إجراء: ${payload['procedureName'] ?? ''}';
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Theme.of(context).dividerColor.withAlpha(40)),
+        color: Theme.of(context).colorScheme.surface,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: const TextStyle(fontWeight: FontWeight.w900)),
+          const SizedBox(height: 10),
+
+          _kv('ID', (o['id'] ?? '').toString()),
+          _kv('Kind', kind),
+          _kv('Status', status),
+          _kv('Admission', (o['admissionId'] ?? '').toString()),
+          _kv('Patient', (o['patientId'] ?? '').toString()),
+          _kv('Notes', (o['notes'] ?? '').toString()),
+
+          const Divider(height: 18),
+
+          if (kind == 'MEDICATION') ...[
+            _kv('Dose', (payload['dose'] ?? '').toString()),
+            _kv('Route', (payload['route'] ?? '').toString()),
+            _kv('Frequency', (payload['frequency'] ?? '').toString()),
+            _kv('Duration', (payload['duration'] ?? '').toString()),
+            _kv('Requested Qty', (payload['requestedQty'] ?? '').toString()),
+            _kv('With Food', (payload['withFood'] ?? '').toString()),
+          ],
+          if (kind == 'LAB') ...[
+            _kv('Priority', (payload['priority'] ?? '').toString()),
+            _kv('Specimen', (payload['specimen'] ?? '').toString()),
+          ],
+          if (kind == 'PROCEDURE') ...[
+            _kv('Urgency', (payload['urgency'] ?? '').toString()),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _actionsCard() {
+    final t = AppLocalizations.of(context);
+    final o = _order ?? {};
+    final kind = (o['kind'] ?? '').toString();
+    final status = (o['status'] ?? '').toString();
+
+    final canCancel = status != 'CANCELLED' && status != 'COMPLETED';
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Theme.of(context).dividerColor.withAlpha(40)),
+        color: Theme.of(context).colorScheme.surface,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text('Actions', style: TextStyle(fontWeight: FontWeight.w900)),
+          const SizedBox(height: 10),
+
+          // Doctor: cancel
+          FilledButton.icon(
+            onPressed: canCancel
+                ? () async {
+                    final reason = await _askText(
                       context,
-                      t.orders_reason_optional,
+                      'سبب الإلغاء (اختياري)',
                     );
                     try {
-                      await _api.pingOrder(widget.orderId, reason: reason);
+                      await _api.cancelOrder(id: widget.orderId, notes: reason);
                       if (!mounted) return;
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text(t.orders_ping_done)),
-                      );
-                    } catch (e) {
-                      if (!mounted) return;
-                      ScaffoldMessenger.of(
-                        context,
-                      ).showSnackBar(SnackBar(content: Text(e.toString())));
-                    }
-                  },
-                  icon: const Icon(Icons.notifications_active_rounded),
-                  label: Text(t.orders_ping),
-                ),
-                FilledButton.icon(
-                  onPressed: () async {
-                    final reason = await _askReason(
-                      context,
-                      t.orders_reason_optional,
-                    );
-                    try {
-                      await _api.escalateOrder(widget.orderId, reason: reason);
-                      if (!mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text(t.orders_escalate_done)),
+                        const SnackBar(content: Text('تم إلغاء الطلب')),
                       );
                       _load();
                     } catch (e) {
@@ -136,11 +193,103 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
                         context,
                       ).showSnackBar(SnackBar(content: Text(e.toString())));
                     }
-                  },
-                  icon: const Icon(Icons.priority_high_rounded),
-                  label: Text(t.orders_escalate),
-                ),
-              ],
+                  }
+                : null,
+            icon: const Icon(Icons.cancel_rounded),
+            label: Text(t.common_cancel),
+          ),
+
+          const SizedBox(height: 10),
+
+          if (kind == 'MEDICATION') ...[
+            const Text(
+              'Pharmacy',
+              style: TextStyle(fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 10),
+
+            OutlinedButton.icon(
+              onPressed: () async {
+                final notes = await _askText(context, 'ملاحظة (اختياري)');
+                try {
+                  await _api.pharmacyPrepare(
+                    orderId: widget.orderId,
+                    notes: notes,
+                  );
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('تم تجهيز الطلب بالكامل')),
+                  );
+                  _load();
+                } catch (e) {
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(SnackBar(content: Text(e.toString())));
+                }
+              },
+              icon: const Icon(Icons.check_circle_outline_rounded),
+              label: const Text('Prepare (Full)'),
+            ),
+
+            OutlinedButton.icon(
+              onPressed: () async {
+                final qtyStr = await _askText(
+                  context,
+                  'الكمية المجهزة (مطلوب)',
+                );
+                final qty = num.tryParse((qtyStr ?? '').trim());
+                if (qty == null || qty <= 0) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('الكمية غير صحيحة')),
+                  );
+                  return;
+                }
+                final notes = await _askText(context, 'ملاحظة (اختياري)');
+                try {
+                  await _api.pharmacyPartial(
+                    orderId: widget.orderId,
+                    preparedQty: qty,
+                    notes: notes,
+                  );
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('تم تجهيز الطلب جزئياً')),
+                  );
+                  _load();
+                } catch (e) {
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(SnackBar(content: Text(e.toString())));
+                }
+              },
+              icon: const Icon(Icons.remove_circle_outline_rounded),
+              label: const Text('Partial'),
+            ),
+
+            OutlinedButton.icon(
+              onPressed: () async {
+                final notes = await _askText(context, 'ملاحظة (اختياري)');
+                try {
+                  await _api.pharmacyOutOfStock(
+                    orderId: widget.orderId,
+                    notes: notes,
+                  );
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('تم وضع الطلب: Out of stock')),
+                  );
+                  _load();
+                } catch (e) {
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(SnackBar(content: Text(e.toString())));
+                }
+              },
+              icon: const Icon(Icons.error_outline_rounded),
+              label: const Text('Out of stock'),
             ),
           ],
         ],
@@ -150,29 +299,21 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
 
   Widget _kv(String k, String v) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: Theme.of(context).dividerColor.withAlpha(40),
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 110,
+            child: Text(k, style: const TextStyle(fontWeight: FontWeight.w800)),
           ),
-          color: Theme.of(context).colorScheme.surface,
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(k, style: const TextStyle(fontWeight: FontWeight.w900)),
-            const SizedBox(height: 6),
-            Text(v.isEmpty ? '-' : v),
-          ],
-        ),
+          Expanded(child: Text(v.isEmpty ? '-' : v)),
+        ],
       ),
     );
   }
 
-  Future<String?> _askReason(BuildContext context, String title) async {
+  Future<String?> _askText(BuildContext context, String title) async {
     final c = TextEditingController();
     final ok = await showDialog<bool>(
       context: context,
@@ -182,7 +323,7 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: Text(AppLocalizations.of(context).common_cancel),
+            child: const Text('Cancel'),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),

@@ -7,7 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
-import '../../core/auth/auth_store.dart';
+import '../../../src_v2/core/auth/auth_store.dart';
 import '../../l10n/app_localizations.dart';
 import 'settings_page.dart';
 

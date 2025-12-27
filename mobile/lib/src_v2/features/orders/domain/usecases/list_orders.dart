@@ -6,6 +6,6 @@ class ListOrdersUseCase {
   const ListOrdersUseCase(this.repo);
 
   Future<List<OrderEntity>> call(OrdersListQuery query) {
-    return repo.listMyCreatedOrders(query);
+    return repo.listOrders(query);
   }
 }

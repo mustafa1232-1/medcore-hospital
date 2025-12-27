@@ -1,5 +1,5 @@
 import 'package:dio/dio.dart';
-import '../../core/api/api_client.dart';
+import '../../../src_v2/core/api/api_client.dart';
 
 class TasksApiService {
   TasksApiService();

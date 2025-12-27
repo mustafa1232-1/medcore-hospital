@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../../core/auth/auth_store.dart';
+import '../../../src_v2/core/auth/auth_store.dart';
 import '../../l10n/app_localizations.dart';
 import 'shell_page.dart';
 

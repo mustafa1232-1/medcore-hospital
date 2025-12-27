@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:mobile/src/core/auth/auth_store.dart';
+import 'package:mobile/src_v2/core/auth/auth_store.dart';
 import 'package:mobile/src_v2/core/rbac/role_utils.dart';
 import 'package:provider/provider.dart';
 
