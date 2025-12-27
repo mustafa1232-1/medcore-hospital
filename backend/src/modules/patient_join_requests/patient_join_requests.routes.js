@@ -21,7 +21,13 @@ function requireSameTenantFromToken() {
 // ==========================
 // Patient submits join request by facility code
 // ==========================
+
+// ✅ Canonical (new)
 router.post('/submit', requirePatientAuth, ctrl.submitByCode);
+
+// ✅ Alias (legacy) — so old mobile calls won't break
+// This will become: POST /api/patient/join-by-code (if mounted at /api)
+router.post('/patient/join-by-code', requirePatientAuth, ctrl.submitByCode);
 
 // ==========================
 // Staff (Reception/Admin) list requests for own tenant

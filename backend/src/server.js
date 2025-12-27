@@ -113,7 +113,7 @@ app.use('/api/patient-join-codes', patientJoinCodesRoutes)
 // Patient join (existing)
 app.use('/api/patient', patientJoinRoutes);
 app.use('/api/patient-join-requests', patientJoinRequestsRoutes);
-// ✅ Patient auth endpoints
+app.use('/api', patientJoinRequestsRoutes);
 app.use('/api/patient-auth', patientAuthRoutes);
 
 // ✅ Patient profile endpoints
