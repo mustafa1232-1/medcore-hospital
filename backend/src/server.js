@@ -74,15 +74,15 @@ const labResultsRoutes = require('./modules/lab_results/lab_results.routes');
 const pharmacyRoutes = require('./modules/pharmacy/pharmacy.routes');
 const medAdminRoutes = require('./modules/med_admin/med_admin.routes');
 
-// Patient App (existing)
+// Patient App (existing join/leave)
 const patientJoinRoutes = require('./modules/patient_app/patient_join.routes');
 
-// ==========================
-// ✅ NEW: Patient Auth + Patient Profile
-// (Patient login/register is separate from staff login)
-// ==========================
+// ✅ Patient Auth + Patient Profile (Patient Portal)
 const patientAuthRoutes = require('./modules/patient_auth/patientAuth.routes');
 const patientProfileRoutes = require('./modules/patient_app/patient_profile/patient_profile.routes');
+
+// ✅ NEW: Staff issues join code for patients
+const patientJoinCodeRoutes = require('./modules/patients/patient_join_code.routes');
 
 // ==========================
 // Mount routes (keep existing mounts as-is)
@@ -105,14 +105,17 @@ app.use('/api', patientLogRoutes); // keep as-is (module decides paths)
 app.use('/api/lab-results', labResultsRoutes);
 app.use('/api/med-admin', medAdminRoutes);
 app.use('/api/pharmacy', pharmacyRoutes);
-app.use('/api', require('./modules/patients/patient_join_code.routes'));
+
+// ✅ Staff join-code routes (unchanged URL paths)
+app.use('/api', patientJoinCodeRoutes);
+
 // Patient join (existing)
 app.use('/api/patient', patientJoinRoutes);
 
-// ✅ NEW: patient auth endpoints
+// ✅ Patient auth endpoints
 app.use('/api/patient-auth', patientAuthRoutes);
 
-// ✅ NEW: patient profile endpoints (self profile)
+// ✅ Patient profile endpoints
 app.use('/api/patient', patientProfileRoutes);
 
 // ==========================
@@ -130,7 +133,6 @@ app.use((req, res) => {
 // ==========================
 app.use((err, req, res, _next) => {
   const status = err.status || 500;
-
   const details = err.details && Array.isArray(err.details) ? err.details : undefined;
 
   const payload = {
