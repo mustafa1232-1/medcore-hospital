@@ -84,7 +84,7 @@ const patientProfileRoutes = require('./modules/patient_app/patient_profile/pati
 
 // ✅ NEW: Staff issues join code for patients
 const patientJoinCodeRoutes = require('./modules/patients/patient_join_code.routes');
-
+const patientJoinRequestsRoutes = require('./modules/patient_join_requests/patient_join_requests.routes');
 // ==========================
 // Mount routes (keep existing mounts as-is)
 // ==========================
@@ -112,7 +112,7 @@ app.use('/api', patientJoinCodeRoutes);
 app.use('/api/patient-join-codes', patientJoinCodesRoutes)
 // Patient join (existing)
 app.use('/api/patient', patientJoinRoutes);
-
+app.use('/api/patient-join-requests', patientJoinRequestsRoutes);
 // ✅ Patient auth endpoints
 app.use('/api/patient-auth', patientAuthRoutes);
 
