@@ -105,7 +105,7 @@ app.use('/api', patientLogRoutes); // keep as-is (module decides paths)
 app.use('/api/lab-results', labResultsRoutes);
 app.use('/api/med-admin', medAdminRoutes);
 app.use('/api/pharmacy', pharmacyRoutes);
-
+app.use('/api', require('./modules/patients/patient_join_code.routes'));
 // Patient join (existing)
 app.use('/api/patient', patientJoinRoutes);
 
