@@ -6,7 +6,8 @@ async function submitByCode({ patientAccountId, code }) {
   if (!patientAccountId) throw new HttpError(401, 'Unauthorized');
   if (!code) throw new HttpError(400, 'code is required');
 
-  // Find active join code (code only)
+  // ✅ Find ACTIVE + not expired join code by code only
+  // Deterministic: take latest created if ever duplicated (should not happen after global unique).
   const q = await pool.query(
     `
     SELECT
@@ -18,23 +19,19 @@ async function submitByCode({ patientAccountId, code }) {
       expires_at AS "expiresAt"
     FROM patient_join_codes
     WHERE code = $1
+      AND status = 'ACTIVE'
+      AND (expires_at IS NULL OR expires_at > now())
+    ORDER BY created_at DESC
     LIMIT 1
     `,
-    [code]
+    [String(code).trim()]
   );
 
   if (q.rowCount === 0) throw new HttpError(400, 'Invalid code');
 
   const jc = q.rows[0];
 
-  if (String(jc.status) !== 'ACTIVE') throw new HttpError(400, 'Code is not active');
-
-  if (jc.expiresAt && new Date(jc.expiresAt).getTime() < Date.now()) {
-    // mark expired (best effort)
-    await pool.query(`UPDATE patient_join_codes SET status='EXPIRED' WHERE id=$1`, [jc.id]);
-    throw new HttpError(400, 'Code expired');
-  }
-
+  // Extra guards (safe)
   if (Number(jc.usedCount) >= Number(jc.maxUses)) {
     throw new HttpError(400, 'Code max uses reached');
   }
@@ -44,7 +41,9 @@ async function submitByCode({ patientAccountId, code }) {
     `
     SELECT id
     FROM patient_join_requests
-    WHERE tenant_id = $1 AND patient_account_id = $2 AND status = 'PENDING'
+    WHERE tenant_id = $1
+      AND patient_account_id = $2
+      AND status = 'PENDING'
     LIMIT 1
     `,
     [jc.tenantId, patientAccountId]
@@ -77,21 +76,25 @@ async function submitByCode({ patientAccountId, code }) {
     [jc.tenantId, jc.id, patientAccountId]
   );
 
-  // Increment used_count (best effort; if it fails we still keep request created)
-  await pool.query(
-    `
-    UPDATE patient_join_codes
-    SET used_count = used_count + 1
-    WHERE id = $1
-    `,
-    [jc.id]
-  );
+  // Increment used_count (best effort)
+  try {
+    await pool.query(
+      `
+      UPDATE patient_join_codes
+      SET used_count = used_count + 1
+      WHERE id = $1
+      `,
+      [jc.id]
+    );
+  } catch (_) {
+    // do not fail request creation
+  }
 
   return {
     ok: true,
     data: {
       ...ins.rows[0],
-      code,
+      code: String(code).trim(),
     },
   };
 }
@@ -99,30 +102,39 @@ async function submitByCode({ patientAccountId, code }) {
 async function listMine({ tenantId, limit, offset }) {
   if (!tenantId) throw new HttpError(400, 'tenantId is required');
 
-  // داخل submitByCode (service)
-const q = await pool.query(
-  `
-  SELECT
-    id,
-    tenant_id AS "tenantId",
-    status,
-    max_uses AS "maxUses",
-    used_count AS "usedCount",
-    expires_at AS "expiresAt"
-  FROM patient_join_codes
-  WHERE code = $1
-    AND status = 'ACTIVE'
-    AND (expires_at IS NULL OR expires_at > now())
-  ORDER BY created_at DESC
-  LIMIT 1
-  `,
-  [code]
-);
+  const lim = Math.min(50, Math.max(1, Number(limit) || 20));
+  const off = Math.max(0, Number(offset) || 0);
 
-if (q.rowCount === 0) throw new HttpError(400, 'Invalid code');
+  // ✅ List PENDING requests for this tenant (Reception/Admin)
+  const q = await pool.query(
+    `
+    SELECT
+      r.id,
+      r.tenant_id AS "tenantId",
+      r.status,
+      r.created_at AS "createdAt",
+      r.decided_at AS "decidedAt",
+      r.patient_account_id AS "patientAccountId",
 
+      pa.full_name AS "patientFullName",
+      pa.phone AS "patientPhone",
 
-  return { ok: true, data: { items: q.rows, limit, offset } };
+      jc.code AS "code",
+      jc.expires_at AS "codeExpiresAt"
+    FROM patient_join_requests r
+    LEFT JOIN patient_accounts pa
+      ON pa.id = r.patient_account_id
+    LEFT JOIN patient_join_codes jc
+      ON jc.id = r.join_code_id
+    WHERE r.tenant_id = $1
+      AND r.status = 'PENDING'
+    ORDER BY r.created_at DESC
+    LIMIT $2 OFFSET $3
+    `,
+    [tenantId, lim, off]
+  );
+
+  return { ok: true, data: { items: q.rows, limit: lim, offset: off } };
 }
 
 async function decide({ tenantId, id, action, staffUserId }) {
@@ -132,7 +144,7 @@ async function decide({ tenantId, id, action, staffUserId }) {
     throw new HttpError(400, 'Invalid action');
   }
 
-  // 1) Load request to get patient_account_id (so we can create membership on approve)
+  // Load request to get patient_account_id
   const rq = await pool.query(
     `
     SELECT
@@ -154,7 +166,7 @@ async function decide({ tenantId, id, action, staffUserId }) {
     throw new HttpError(409, 'Request already decided');
   }
 
-  // 2) Decide request
+  // Decide request
   const q = await pool.query(
     `
     UPDATE patient_join_requests
@@ -175,8 +187,7 @@ async function decide({ tenantId, id, action, staffUserId }) {
     throw new HttpError(404, 'Request not found (or already decided)');
   }
 
-  // 3) ✅ If APPROVED => upsert membership (facility membership)
-  // NOTE: tenant_patient_id is unknown in this flow; leave it NULL.
+  // If APPROVED => upsert membership (tenant membership)
   if (action === 'APPROVED') {
     try {
       await pool.query(
@@ -210,10 +221,8 @@ async function decide({ tenantId, id, action, staffUserId }) {
         `,
         [reqRow.patientAccountId, tenantId, staffUserId]
       );
-    } catch (e) {
-      // Important: do not fail decision if membership upsert fails
-      // because the receptionist already "approved" the request.
-      // You can log e if needed.
+    } catch (_) {
+      // do not fail decision if membership fails
     }
   }
 
