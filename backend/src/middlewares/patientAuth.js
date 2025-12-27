@@ -1,18 +1,6 @@
 // src/middlewares/patientAuth.js
 const jwt = require('jsonwebtoken');
 
-function mustEnv(name) {
-  const v = process.env[name];
-  if (!v) throw new Error(`Missing env: ${name}`);
-  return v;
-}
-
-// ✅ Important: accept both secrets (patient-specific or fallback to staff secret)
-const PATIENT_SECRET =
-  process.env.PATIENT_JWT_ACCESS_SECRET ||
-  process.env.JWT_ACCESS_SECRET ||
-  mustEnv('JWT_ACCESS_SECRET');
-
 function readBearer(req) {
   const h = req.headers?.authorization || req.headers?.Authorization;
   if (!h) return null;
@@ -22,32 +10,53 @@ function readBearer(req) {
 }
 
 function requirePatientAuth(req, res, next) {
+  const debug = String(req.headers['x-debug-auth'] || '') === '1';
+
   try {
     const token = readBearer(req);
     if (!token) return res.status(401).json({ message: 'Unauthorized' });
 
-    // ✅ verify token
-    const payload = jwt.verify(token, PATIENT_SECRET);
+    const secretsToTry = [
+      process.env.PATIENT_JWT_ACCESS_SECRET,
+      process.env.JWT_ACCESS_SECRET,
+    ].filter(Boolean);
 
-    // ✅ enforce patient kind (if present)
-    // Some tokens may not include kind (future-proof) so we allow missing kind.
-    if (payload?.kind && payload.kind !== 'PATIENT') {
+    let payload = null;
+    let lastErr = null;
+
+    for (const secret of secretsToTry) {
+      try {
+        payload = jwt.verify(token, secret);
+        break;
+      } catch (e) {
+        lastErr = e;
+      }
+    }
+
+    if (!payload) {
+      if (debug) {
+        return res.status(401).json({
+          message: 'Unauthorized',
+          reason: lastErr?.message || 'verify_failed',
+          triedSecrets: secretsToTry.map((_, i) => `secret#${i + 1}`),
+        });
+      }
       return res.status(401).json({ message: 'Unauthorized' });
     }
 
-    // ✅ normalize "sub"
-    const sub = payload?.sub;
-    if (!sub) return res.status(401).json({ message: 'Unauthorized' });
+    if (payload?.kind && payload.kind !== 'PATIENT') {
+      return res.status(401).json({ message: 'Unauthorized', ...(debug ? { reason: 'wrong_kind' } : {}) });
+    }
 
-    req.patientUser = payload; // {sub, kind, iat, exp, ...}
+    if (!payload?.sub) {
+      return res.status(401).json({ message: 'Unauthorized', ...(debug ? { reason: 'missing_sub' } : {}) });
+    }
+
+    req.patientUser = payload;
     return next();
   } catch (e) {
-    // ✅ in non-production show reason for faster debugging
-    if (process.env.NODE_ENV !== 'production') {
-      return res.status(401).json({
-        message: 'Unauthorized',
-        reason: e?.message || String(e),
-      });
+    if (debug) {
+      return res.status(401).json({ message: 'Unauthorized', reason: e?.message || String(e) });
     }
     return res.status(401).json({ message: 'Unauthorized' });
   }
