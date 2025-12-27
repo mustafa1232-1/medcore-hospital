@@ -1,12 +1,16 @@
-// ignore_for_file: deprecated_member_use
+// ignore_for_file: deprecated_member_use, use_build_context_synchronously
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/auth/auth_store.dart';
 import '../../core/auth/patient_session_store.dart';
+
 import '../../workspaces/patient/services/patient_auth_service.dart';
-import '../../workspaces/patient/presentation/pages/patient_facilities_page.dart';
+import '../../workspaces/patient/services/patient_register_service.dart';
+
+// ✅ NEW: go to PatientHomePage directly (profile works without joining)
+import '../../workspaces/patient/presentation/pages/patient_home_page.dart';
 
 import 'register_tenant_page.dart';
 
@@ -35,13 +39,15 @@ class _LoginPageState extends State<LoginPage> {
   final _pEmailCtrl = TextEditingController();
   final _pPhoneCtrl = TextEditingController();
   final _pPasswordCtrl = TextEditingController();
+
   final _pFullNameCtrl = TextEditingController(); // register
   final _pRegisterPassCtrl = TextEditingController(); // register
 
   bool _useEmail = true; // staff
   bool _pUseEmail = false; // patient
-  bool _obscure = true;
-  bool _pObscure = true;
+
+  bool _obscure = true; // staff
+  bool _pObscure = true; // patient
 
   bool _loading = false;
   String? _error;
@@ -64,6 +70,27 @@ class _LoginPageState extends State<LoginPage> {
     super.dispose();
   }
 
+  void _setError(String? msg) {
+    if (!mounted) return;
+    setState(() => _error = msg);
+  }
+
+  void _setLoading(bool v) {
+    if (!mounted) return;
+    setState(() => _loading = v);
+  }
+
+  void _goPatientHome() {
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const PatientHomePage(
+          tenantId: null, // ✅ not required for profile
+        ),
+      ),
+    );
+  }
+
   InputDecoration _dec({
     required String label,
     String? hint,
@@ -80,13 +107,14 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 
+  // =========================
+  // Staff submit
+  // =========================
   Future<void> _submitStaff() async {
     if (!_formKeyStaff.currentState!.validate()) return;
 
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+    _setLoading(true);
+    _setError(null);
 
     try {
       await context.read<AuthStore>().login(
@@ -95,23 +123,22 @@ class _LoginPageState extends State<LoginPage> {
         phone: !_useEmail ? _phoneCtrl.text.trim() : null,
         password: _passwordCtrl.text,
       );
-      // ✅ V2Shell will redirect to workspace automatically
+      // ✅ V2Shell will redirect to staff workspace automatically
     } catch (_) {
-      setState(() {
-        _error = 'فشل تسجيل الدخول. تأكد من رمز المنشأة وبيانات الحساب.';
-      });
+      _setError('فشل تسجيل الدخول. تأكد من رمز المنشأة وبيانات الحساب.');
     } finally {
-      if (mounted) setState(() => _loading = false);
+      _setLoading(false);
     }
   }
 
+  // =========================
+  // Patient Login submit
+  // =========================
   Future<void> _submitPatientLogin() async {
     if (!_formKeyPatient.currentState!.validate()) return;
 
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+    _setLoading(true);
+    _setError(null);
 
     try {
       await PatientAuthService.login(
@@ -120,52 +147,52 @@ class _LoginPageState extends State<LoginPage> {
         password: _pPasswordCtrl.text,
       );
 
-      // ✅ refresh patient session so V2Shell sees it
       await context.read<PatientSessionStore>().refresh();
 
       if (!mounted) return;
 
-      // ✅ Go directly to patient portal (no need to wait V2Shell rebuild)
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const PatientFacilitiesPage()),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _error = 'فشل دخول المريض. تحقق من البيانات أو أنشئ حساباً جديداً.';
-      });
+      // ✅ NEW: patient sees portal + profile even without joining a facility
+      _goPatientHome();
+    } catch (_) {
+      _setError('فشل دخول المريض. تحقق من البيانات أو أنشئ حساباً جديداً.');
     } finally {
-      if (mounted) setState(() => _loading = false);
+      _setLoading(false);
     }
   }
 
-  // ✅ Placeholder register (depends on backend endpoint)
-  // If you already created patient register endpoint, we will wire it properly.
+  // =========================
+  // Patient Register submit
+  // =========================
   Future<void> _submitPatientRegister() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+    if (!_formKeyPatient.currentState!.validate()) return;
+
+    _setLoading(true);
+    _setError(null);
 
     try {
-      // TODO: Implement backend endpoint (e.g. POST /api/patient-auth/register)
-      // For now, guide user clearly without crashing logic.
-      throw Exception(
-        'Backend endpoint for patient register is not wired yet. '
-        'Add /api/patient-auth/register then we will connect it.',
+      await PatientRegisterService.register(
+        fullName: _pFullNameCtrl.text.trim(),
+        phone: _pUseEmail ? null : _pPhoneCtrl.text.trim(),
+        email: _pUseEmail ? _pEmailCtrl.text.trim() : null,
+        password: _pRegisterPassCtrl.text,
       );
-    } catch (_) {
+
+      await context.read<PatientSessionStore>().refresh();
+
       if (!mounted) return;
-      setState(() {
-        _error =
-            'إنشاء حساب المريض يحتاج Endpoint بالسيرفر. إذا تحب، أرسل ملف patient-auth routes/service وسأربطه فوراً.';
-      });
+
+      // ✅ NEW: go to portal
+      _goPatientHome();
+    } catch (_) {
+      _setError('فشل إنشاء الحساب. قد يكون البريد/الهاتف مستخدم مسبقاً.');
     } finally {
-      if (mounted) setState(() => _loading = false);
+      _setLoading(false);
     }
   }
 
+  // =========================
+  // Build
+  // =========================
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -199,7 +226,6 @@ class _LoginPageState extends State<LoginPage> {
                     ),
                     const SizedBox(height: 12),
 
-                    // ✅ Unified mode selector
                     _ModeSelector(
                       value: _mode,
                       onChanged: (m) {
@@ -237,7 +263,7 @@ class _LoginPageState extends State<LoginPage> {
                     Text(
                       _mode == _LoginMode.staff
                           ? 'ملاحظة: رمز المنشأة خاص بالكادر فقط.'
-                          : 'ملاحظة: المريض يسجل دخول بحسابه ثم ينضم للمنشأة عبر QR / Join Code.',
+                          : 'ملاحظة: بوابة المريض تعمل بدون ربط منشأة. الربط يتم لاحقاً عبر QR / Join Code عند الحاجة.',
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: theme.textTheme.bodySmall?.color?.withOpacity(
                           0.75,
@@ -255,6 +281,9 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 
+  // =========================
+  // Staff form
+  // =========================
   Widget _buildStaffForm(ThemeData theme) {
     return Form(
       key: _formKeyStaff,
@@ -286,7 +315,10 @@ class _LoginPageState extends State<LoginPage> {
             left: 'Email',
             right: 'Phone',
             value: _useEmail,
-            onChanged: (v) => setState(() => _useEmail = v),
+            onChanged: (v) => setState(() {
+              _useEmail = v;
+              _error = null;
+            }),
           ),
           const SizedBox(height: 10),
 
@@ -390,6 +422,9 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 
+  // =========================
+  // Patient block (login/register)
+  // =========================
   Widget _buildPatientBlock(ThemeData theme) {
     final isRegister = _patientView == _PatientView.register;
 
@@ -422,7 +457,6 @@ class _LoginPageState extends State<LoginPage> {
         ),
         const SizedBox(height: 10),
 
-        // ✅ Email/Phone selector
         Row(
           children: [
             Expanded(
@@ -432,7 +466,10 @@ class _LoginPageState extends State<LoginPage> {
                   ButtonSegment(value: true, label: Text('Email')),
                 ],
                 selected: {_pUseEmail},
-                onSelectionChanged: (s) => setState(() => _pUseEmail = s.first),
+                onSelectionChanged: (s) => setState(() {
+                  _pUseEmail = s.first;
+                  _error = null;
+                }),
               ),
             ),
           ],
@@ -482,8 +519,12 @@ class _LoginPageState extends State<LoginPage> {
                     hint: 'مثال: أحمد علي حسين',
                     icon: Icons.badge_outlined,
                   ),
-                  validator: (v) =>
-                      (v == null || v.trim().isEmpty) ? 'مطلوب' : null,
+                  validator: (v) {
+                    final s = (v ?? '').trim();
+                    if (s.isEmpty) return 'مطلوب';
+                    if (s.length < 2) return 'الاسم قصير جداً';
+                    return null;
+                  },
                 ),
                 const SizedBox(height: 12),
               ],
@@ -501,7 +542,13 @@ class _LoginPageState extends State<LoginPage> {
                     ),
                   ),
                 ),
-                validator: (v) => (v == null || v.isEmpty) ? 'مطلوب' : null,
+                validator: (v) {
+                  final s = (v ?? '');
+                  if (s.isEmpty) return 'مطلوب';
+                  if (isRegister && s.length < 6)
+                    return 'كلمة المرور يجب أن تكون 6 أحرف على الأقل';
+                  return null;
+                },
               ),
 
               const SizedBox(height: 14),
@@ -560,13 +607,17 @@ class _LoginPageState extends State<LoginPage> {
             border: Border.all(color: theme.dividerColor.withOpacity(0.2)),
           ),
           child: const Text(
-            'بعد الدخول يمكنك ربط حسابك بأي منشأة عبر Join Code أو QR.',
+            'بعد الدخول يمكنك استخدام بوابة المريض مباشرة. وربط منشأة عبر Join Code / QR متاح عند الحاجة.',
           ),
         ),
       ],
     );
   }
 }
+
+// =========================
+// Widgets
+// =========================
 
 class _ModeSelector extends StatelessWidget {
   final _LoginMode value;

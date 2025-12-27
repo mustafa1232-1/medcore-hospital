@@ -1,4 +1,4 @@
-// ignore_for_file: use_build_context_synchronously
+// ignore_for_file: use_build_context_synchronously, unnecessary_to_list_in_spreads
 
 import 'package:flutter/material.dart';
 import 'package:mobile/src_v2/core/shell/v2_shell_scaffold.dart';

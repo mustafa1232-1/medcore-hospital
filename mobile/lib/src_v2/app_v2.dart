@@ -5,6 +5,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 
 import 'core/auth/auth_store.dart';
+import 'core/auth/patient_session_store.dart'; // ✅ ADD
 import '../src/core/settings/app_settings_store.dart';
 import '../src/core/settings/app_theme.dart';
 import '../src/l10n/app_localizations.dart';
@@ -19,6 +20,9 @@ class MedcoreAppV2 extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => AuthStore()..bootstrap()),
+        ChangeNotifierProvider(
+          create: (_) => PatientSessionStore()..bootstrap(),
+        ), // ✅ ADD
         ChangeNotifierProvider(create: (_) => AppSettingsStore()..load()),
       ],
       child: Consumer<AppSettingsStore>(
@@ -26,7 +30,6 @@ class MedcoreAppV2 extends StatelessWidget {
           return MaterialApp(
             debugShowCheckedModeBanner: false,
             title: 'CareSync',
-
             locale: settings.locale,
             supportedLocales: AppLocalizations.supportedLocales,
             localizationsDelegates: const [
@@ -35,7 +38,6 @@ class MedcoreAppV2 extends StatelessWidget {
               GlobalWidgetsLocalizations.delegate,
               GlobalCupertinoLocalizations.delegate,
             ],
-
             builder: (context, child) {
               return Directionality(
                 textDirection: TextDirection.ltr,
@@ -47,11 +49,9 @@ class MedcoreAppV2 extends StatelessWidget {
                 ),
               );
             },
-
             themeMode: settings.themeMode,
             theme: AppTheme.build(settings, Brightness.light),
             darkTheme: AppTheme.build(settings, Brightness.dark),
-
             home: const V2Shell(),
           );
         },
