@@ -12,7 +12,6 @@ const app = express();
 // ==========================
 // Core runtime settings
 // ==========================
-// Important behind proxies (Railway/Render/Nginx). Enables correct req.ip, secure cookies, etc.
 app.set('trust proxy', 1);
 
 // ==========================
@@ -20,11 +19,10 @@ app.set('trust proxy', 1);
 // ==========================
 app.use(helmet());
 
-// CORS (keep permissive default like current behavior)
-// Optionally restrict via CORS_ORIGINS="https://a.com,https://b.com"
+// CORS
 const corsOrigins = (process.env.CORS_ORIGINS || '')
   .split(',')
-  .map(s => s.trim())
+  .map((s) => s.trim())
   .filter(Boolean);
 
 app.use(
@@ -37,7 +35,7 @@ app.use(
 // Body parsing
 app.use(express.json({ limit: process.env.JSON_LIMIT || '1mb' }));
 
-// Request ID (for tracing)
+// Request ID
 app.use((req, res, next) => {
   const rid = req.headers['x-request-id'] || crypto.randomUUID();
   req.requestId = rid;
@@ -68,18 +66,30 @@ const patientsRoutes = require('./modules/patients/patients.routes');
 const admissionsRoutes = require('./modules/admissions/admissions.routes');
 const bedHistoryRoutes = require('./modules/bed_history/bed_history.routes');
 
-// New modules
+// Existing modules
 const ordersRoutes = require('./modules/orders/orders.routes');
 const tasksRoutes = require('./modules/tasks/tasks.routes');
 const patientLogRoutes = require('./modules/patient_log/patient_log.routes');
 const labResultsRoutes = require('./modules/lab_results/lab_results.routes');
 const pharmacyRoutes = require('./modules/pharmacy/pharmacy.routes');
 const medAdminRoutes = require('./modules/med_admin/med_admin.routes');
+
+// Patient App (existing)
 const patientJoinRoutes = require('./modules/patient_app/patient_join.routes');
 
-// Mount routes
+// ==========================
+// ✅ NEW: Patient Auth + Patient Profile
+// (Patient login/register is separate from staff login)
+// ==========================
+const patientAuthRoutes = require('./modules/patient_auth/patientAuth.routes');
+const patientProfileRoutes = require('./modules/patient_app/patient_profile/patient_profile.routes');
+
+// ==========================
+// Mount routes (keep existing mounts as-is)
+// ==========================
 app.use('/api/auth', authRoutes);
 app.use('/api', meRoutes); // contains /me
+
 app.use('/api/roles', rolesRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/facility', facilityRoutes);
@@ -95,7 +105,15 @@ app.use('/api', patientLogRoutes); // keep as-is (module decides paths)
 app.use('/api/lab-results', labResultsRoutes);
 app.use('/api/med-admin', medAdminRoutes);
 app.use('/api/pharmacy', pharmacyRoutes);
+
+// Patient join (existing)
 app.use('/api/patient', patientJoinRoutes);
+
+// ✅ NEW: patient auth endpoints
+app.use('/api/patient-auth', patientAuthRoutes);
+
+// ✅ NEW: patient profile endpoints (self profile)
+app.use('/api/patient', patientProfileRoutes);
 
 // ==========================
 // 404
@@ -113,8 +131,7 @@ app.use((req, res) => {
 app.use((err, req, res, _next) => {
   const status = err.status || 500;
 
-  const details =
-    err.details && Array.isArray(err.details) ? err.details : undefined;
+  const details = err.details && Array.isArray(err.details) ? err.details : undefined;
 
   const payload = {
     message: err.message || 'Server error',

@@ -2,13 +2,15 @@ const pool = require('../../db/pool');
 const { HttpError } = require('../../utils/httpError');
 const { sha256 } = require('../patients/patient_link.service');
 
+// NEW: snapshot builder
+const { buildProfileSnapshot } = require('./patient_profile/patient_profile.service');
+
 async function joinFacility({ patientAccountId, tenantId, patientId, joinCode }) {
   if (!patientAccountId) throw new HttpError(401, 'Unauthorized');
   if (!tenantId) throw new HttpError(400, 'tenantId is required');
   if (!patientId) throw new HttpError(400, 'patientId is required');
   if (!joinCode) throw new HttpError(400, 'joinCode is required');
 
-  // تحقق من الكود داخل patients في ذلك tenant
   const hash = sha256(`${tenantId}:${patientId}:${joinCode}`);
 
   const q = await pool.query(
@@ -65,7 +67,29 @@ async function joinFacility({ patientAccountId, tenantId, patientId, joinCode })
     [patientAccountId, tenantId, patientId]
   );
 
-  // 🔒 optional: نقدر نمسح join_code_hash بعد نجاح الانضمام لمنع إعادة استخدامه
+  // ✅ NEW: snapshot profile into tenant storage
+  // (does not affect existing flows; safe insert)
+  try {
+    const snap = await buildProfileSnapshot({ patientAccountId });
+
+    await pool.query(
+      `
+      INSERT INTO tenant_patient_profile_snapshots (
+        tenant_id,
+        tenant_patient_id,
+        patient_account_id,
+        snapshot,
+        created_at
+      )
+      VALUES ($1,$2,$3,$4::jsonb, now())
+      `,
+      [tenantId, patientId, patientAccountId, JSON.stringify(snap || {})]
+    );
+  } catch (_) {
+    // keep join success even if snapshot fails
+  }
+
+  // Optional: clear join_code after success
   await pool.query(
     `
     UPDATE patients
@@ -103,7 +127,6 @@ async function leaveFacility({ patientAccountId, tenantId }) {
   );
 
   if (q.rowCount === 0) {
-    // لا نعتبرها خطأ كبير — يمكن العضوية ليست فعالة
     return { ok: true, changed: false };
   }
 

@@ -5,7 +5,7 @@ const router = express.Router();
 const { requireAuth } = require('../../middlewares/auth');
 const { requireRole } = require('../../middlewares/roles');
 const { validateBody } = require('../../middlewares/validate');
-
+const patientProfileSnapshotsController = require('./patient_profile_snapshots.controller');
 const patientsController = require('./patients.controller');
 const { createPatientSchema, updatePatientSchema } = require('./patients.validators');
 
@@ -88,7 +88,12 @@ router.get(
   requireRole('RECEPTION', 'ADMIN', 'DOCTOR'),
   patientLinkController.externalHistory
 );
-
+router.get(
+  '/:id/profile-snapshots',
+  requireAuth,
+  requireRole('RECEPTION', 'ADMIN', 'DOCTOR'),
+  patientProfileSnapshotsController.list
+);
 // Get single patient
 router.get(
   '/:id',
