@@ -77,6 +77,7 @@ const medAdminRoutes = require('./modules/med_admin/med_admin.routes');
 
 // Patient App (existing join/leave)
 const patientJoinRoutes = require('./modules/patient_app/patient_join.routes');
+const patientMembershipsRoutes = require('./modules/patient_app/patient_memberships/patient_memberships.routes');
 
 // ✅ Patient Auth + Patient Profile (Patient Portal)
 const patientAuthRoutes = require('./modules/patient_auth/patientAuth.routes');
@@ -118,6 +119,7 @@ app.use('/api/patient-auth', patientAuthRoutes);
 
 // ✅ Patient profile endpoints
 app.use('/api/patient', patientProfileRoutes);
+app.use('/api/patient', patientMembershipsRoutes);
 
 // ==========================
 // 404

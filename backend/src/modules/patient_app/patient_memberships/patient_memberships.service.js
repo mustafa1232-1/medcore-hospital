@@ -7,23 +7,29 @@ async function listMyMemberships({ patientAccountId }) {
   const q = await pool.query(
     `
     SELECT
-      id,
-      tenant_id AS "tenantId",
-      patient_account_id AS "patientAccountId",
-      status,
-      requested_at AS "requestedAt",
-      reviewed_at AS "reviewedAt",
-      reviewed_by_user_id AS "reviewedByUserId",
-      tenant_patient_id AS "tenantPatientId",
-      left_at AS "leftAt"
-    FROM patient_memberships
-    WHERE patient_account_id = $1
-    ORDER BY reviewed_at DESC NULLS LAST, requested_at DESC NULLS LAST
+      m.id,
+      m.tenant_id AS "tenantId",
+      m.patient_account_id AS "patientAccountId",
+      m.status,
+      m.requested_at AS "requestedAt",
+      m.reviewed_at AS "reviewedAt",
+      m.reviewed_by_user_id AS "reviewedByUserId",
+      m.tenant_patient_id AS "tenantPatientId",
+      m.left_at AS "leftAt",
+
+      t.name AS "tenantName",
+      t.type AS "tenantType",
+      t.code AS "tenantCode"
+    FROM patient_memberships m
+    JOIN tenants t ON t.id = m.tenant_id
+    WHERE m.patient_account_id = $1
+    ORDER BY m.reviewed_at DESC NULLS LAST, m.requested_at DESC NULLS LAST
     `,
     [patientAccountId]
   );
 
   return { ok: true, data: { items: q.rows } };
+
 }
 
 async function listMyJoinRequests({ patientAccountId, limit, offset }) {
